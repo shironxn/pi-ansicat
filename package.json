@@ -1,6 +1,6 @@
 {
   "name": "pi-ansicat",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Paste images with ANSI preview + vision fallback for text-only models",
   "keywords": [
     "pi-package",
@@ -38,7 +38,8 @@
     "typescript": "^6.0.0"
   },
   "files": [
-    "src"
+    "src",
+    "CHANGELOG.md"
   ],
   "main": "./src/index.ts",
   "exports": {
@@ -46,7 +47,9 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "lint:md": "markdownlint --config .markdownlint.json README.md"
+    "test": "node --test test/",
+    "lint:md": "markdownlint --config .markdownlint.json README.md CHANGELOG.md",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "pi": {
     "extensions": [

@@ -7,6 +7,7 @@ import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 
 import { renderHalfBlocks } from "./art.js";
 import { readClipboardImage } from "./clipboard.js";
+import { toPngForPreview } from "./convert.js";
 import { decodeImage } from "./decode.js";
 import type { ImageMarker, PendingImage } from "./types.js";
 import { describeImage, loadVisionConfig, modelSupportsImages } from "./vision.js";
@@ -125,9 +126,20 @@ interface ImageQueue {
 function createImageQueue(): ImageQueue { return { images: [], markers: [], nextIndex: 1 }; }
 function markerKey(marker: ImageMarker): string { return marker.text.trim(); }
 
-function buildPreview(bytes: Uint8Array, mimeType: string, label: string): { art: string[]; note?: string } {
+async function buildPreview(bytes: Uint8Array, mimeType: string, label: string): Promise<{ art: string[]; note?: string }> {
   try {
-    const img = decodeImage(bytes, mimeType);
+    let source = bytes;
+    let sourceMime = mimeType;
+    if (mimeType !== "image/png" && mimeType !== "image/bmp") {
+      // JPEG/WebP/GIF are converted to PNG by an optional system tool. If none
+      // is installed, toPngForPreview returns null and the preview degrades to
+      // "unavailable" exactly as it did before.
+      const converted = await toPngForPreview(bytes, mimeType);
+      if (!converted) return { art: [], note: `${label}: preview unavailable (no converter for ${mimeType})` };
+      source = converted;
+      sourceMime = "image/png";
+    }
+    const img = decodeImage(source, sourceMime);
     let cols = _config.cols;
     let art = renderHalfBlocks(img, cols);
     while (art.length > _config.maxLines && cols > 20) {
@@ -176,7 +188,7 @@ async function doPaste(): Promise<void> {
     if (image.bytes.length > MAX_FILE_SIZE_BYTES) { _ctx.ui.notify(`Image too large (${(image.bytes.length / 1048576).toFixed(1)}MB > 20MB).`, "warning"); return; }
     const [, subtype] = image.mimeType.split("/");
     const label = `clipboard.${subtype ?? "png"}`;
-    const { art, note } = buildPreview(image.bytes, image.mimeType, label);
+    const { art, note } = await buildPreview(image.bytes, image.mimeType, label);
     const marker = queueImage(_queue, { id: "", base64: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType, art, label }, _ctx);
     _pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${marker.text.trim()} (${label})`, display: true, details: { art, note, label, marker: marker.text.trim() } }, { triggerTurn: false });
     if (note && art.length === 0) _ctx.ui.notify(note, "info");
@@ -272,7 +284,9 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
         let mime = "image/png";
         if (ext === ".jpg" || ext === ".jpeg") mime = "image/jpeg";
         else if (ext === ".bmp") mime = "image/bmp";
-        const { art, note } = buildPreview(bytes, mime, path.basename(abs));
+        else if (ext === ".webp") mime = "image/webp";
+        else if (ext === ".gif") mime = "image/gif";
+        const { art, note } = await buildPreview(bytes, mime, path.basename(abs));
         pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${path.basename(abs)}`, display: true, details: { art, note, label: path.basename(abs) } }, { triggerTurn: false });
       } catch (err) { ctx.ui.notify(`ansicat: ${err instanceof Error ? err.message : String(err)}`, "error"); }
     },

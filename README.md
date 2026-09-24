@@ -23,6 +23,11 @@ edit it yourself:
 
 Linux only. Wayland needs `wl-clipboard`, X11 needs `xclip`.
 
+Preview works out of the box for PNG (any bit depth or color type,
+including palette) and BMP. JPEG, WebP and GIF are previewed too when one
+of `ImageMagick` (`magick` or `convert`) or `ffmpeg` is installed; without
+one, those three still attach to the message, just without a preview.
+
 ## Use
 
 Paste with `Ctrl+V`. An `[Image #N]` marker goes into the editor and
@@ -31,7 +36,7 @@ a small ANSI preview renders below the message.
 One command for everything:
 
 ```text
-/ansicat /path/to/image.png   # preview a PNG or BMP file
+/ansicat /path/to/image.png   # preview an image file
 /ansicat cols=32 maxLines=8   # resize the preview (live)
 /ansicat                      # show current size
 ```
@@ -56,11 +61,14 @@ is used only for text-only models. Without it, pi-ansicat reuses
 ## How it works
 
 1. Reads the clipboard with `wl-paste` or `xclip` (auto-detected).
-2. Decodes PNG (8-bit gray, RGB, gray-alpha, RGBA, non-interlaced)
-   or 24-bit BMP with no extra dependencies and renders a
-   half-block truecolor preview. It is plain text, so foot, tmux,
-   and ssh all show it.
-3. On submit at a text-only model, each image is described once via
+2. Decodes PNG and BMP with no extra dependencies and renders a half-block
+   truecolor preview. PNG support covers every bit depth (1/2/4/8/16),
+   color types 0/2/3/4/6 (gray, RGB, palette, gray-alpha, RGBA), and `tRNS`
+   transparency; BMP covers 1/4/8-bit palette and 24/32-bit. It is plain
+   text, so foot, tmux, and ssh all show it.
+3. JPEG, WebP and GIF are converted to PNG first by a system image tool
+   when one is present. No converter means no preview, never a wrong one.
+4. On submit at a text-only model, each image is described once via
    the vision model and the text is appended to the message. The
    description is marked as untrusted content, not instructions.
 
