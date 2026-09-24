@@ -48,8 +48,10 @@ Optional `~/.pi/ansicat.json`:
 }
 ```
 
-`vision` is only used for text-only models. Without it, pi-ansicat
-reuses `~/.pi/pi-vision.json` when present.
+`provider` and `model` name any vision-capable model already configured in
+pi (see `pi --list-models`); the values above are only an example. `vision`
+is used only for text-only models. Without it, pi-ansicat reuses
+`~/.pi/pi-vision.json` when present.
 
 ## How it works
 

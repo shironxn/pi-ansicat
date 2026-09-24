@@ -30,8 +30,24 @@ function loadConfig(): AnsicatConfig {
     const raw = JSON.parse(readFileSync(p, "utf8")) as Partial<AnsicatConfig>;
     const cols = Math.max(20, Math.min(120, Number(raw.cols) || DEFAULT_CONFIG.cols));
     const maxLines = Math.max(4, Math.min(40, Number(raw.maxLines) || DEFAULT_CONFIG.maxLines));
-    return { cols, maxLines };
+    return { cols, maxLines, keybindingPromptDeclined: raw.keybindingPromptDeclined === true };
   } catch { return { ...DEFAULT_CONFIG }; }
+}
+
+// Record the declined prompt in the extension's own config so the next
+// session does not ask again. Read-merge-write keeps unrelated keys
+// (cols, maxLines, vision) intact, and the write is atomic.
+async function persistDeclined(current: AnsicatConfig): Promise<void> {
+  const p = `${process.env.HOME ?? ""}/.pi/ansicat.json`;
+  const { writeFileSync, mkdirSync, renameSync } = await import("node:fs");
+  const path = await import("node:path");
+  let raw: Record<string, unknown> = {};
+  try { raw = JSON.parse(readFileSync(p, "utf8")) as Record<string, unknown>; } catch { /* start fresh */ }
+  const next = { ...raw, cols: current.cols, maxLines: current.maxLines, keybindingPromptDeclined: true };
+  mkdirSync(path.dirname(p), { recursive: true });
+  const tmp = `${p}.tmp.${process.pid}`;
+  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`);
+  renameSync(tmp, p);
 }
 
 interface PendingImageEx extends PendingImage {
@@ -284,8 +300,10 @@ export default function (pi: ExtensionAPI): void {
           : "Ctrl+V also triggers pi's built-in image paste (double paste). Unbind the built-in in keybindings.json? (original is backed up)",
       );
       if (!ok) {
-        // Declined: do not nag again until pi restarts.
+        // Declined: persist so the next session does not ask again.
         _config.keybindingPromptDeclined = true;
+        try { await persistDeclined(_config); }
+        catch { /* non-fatal: worst case the prompt shows again next session */ }
       }
       if (ok && state.status !== "stringBound") {
         try {
@@ -304,5 +322,5 @@ export default function (pi: ExtensionAPI): void {
       }
     }
   });
-  pi.on("session_shutdown", () => { _ctx = null; _queue = null; _pasting = false; });
+  pi.on("session_shutdown", () => { _ctx = null; _queue = null; _pasting = false; _describeCache.clear(); });
 }
