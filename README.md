@@ -73,7 +73,21 @@ you paste from the clipboard. If you use both, they do not overlap.
 
 ## Config
 
-Optional `~/.pi/ansicat.json`:
+Optional `~/.pi/ansicat.json`, both keys optional (defaults shown):
+
+```json
+{
+  "cols": 48,
+  "maxLines": 14
+}
+```
+
+Vision is separate, because most people already have it configured somewhere.
+If you run pi-core-vision, its `~/.pi/pi-vision.json` is read automatically and
+you do not need anything else.
+
+If you do not, add a `vision` block so text-only models still get a
+description:
 
 ```json
 {
@@ -84,9 +98,9 @@ Optional `~/.pi/ansicat.json`:
 ```
 
 `provider` and `model` name any vision-capable model already configured in pi
-(see `pi --list-models`); the values above are only an example. `vision` is
-read only when the active model cannot take images. If you omit it, pi-ansicat
-reuses `~/.pi/pi-vision.json` when that file exists.
+(see `pi --list-models`); the values above are only an example. The `vision`
+block is used only when the active model cannot take images. When both files
+exist, the block in `~/.pi/ansicat.json` wins.
 
 ## How it works
 
