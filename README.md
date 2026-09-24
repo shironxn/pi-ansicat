@@ -8,12 +8,14 @@ Inline image preview for terminals without kitty/iTerm2 image protocol (foot, st
 Most image paste extensions require kitty/iTerm2 graphics protocol. Terminals without that protocol (like `foot`) just show `[Image #N]` markers with no visual feedback — and worse, text-only models strip the image silently so you don't even see it when submitting.
 
 `pi-ansicat` fixes both problems:
+
 1. **Immediate ANSI preview** — renders a colorful half-block (`▀`) preview using plain terminal codes
 2. **Vision fallback** — pre-describes images via a vision model before submitting to text-only models, preventing silent image loss
 
 ## 🚀 Install
 
 ### Via local path (development)
+
 ```bash
 pi install path:./workspace/projects/pi-ansicat
 ```
@@ -21,11 +23,13 @@ pi install path:./workspace/projects/pi-ansicat
 Then `/reload` in Pi.
 
 ### Via npm (after publish)
+
 ```bash
 pi install npm:pi-ansicat
 ```
 
 **Note:** Conflicts with Pi's built-in paste on `Ctrl+V`. Clear keybinding in `~/.pi/agent/keybindings.json`:
+
 ```json
 { "app.clipboard.pasteImage": [] }
 ```
@@ -33,6 +37,7 @@ pi install npm:pi-ansicat
 ## ⚙️ Requirements
 
 Linux only:
+
 - **Wayland** → `wl-paste` (`sudo pacman -S wl-clipboard` / `apt install wl-clipboard`)
 - **X11** → `xclip` (`sudo pacman -S xclip` / `apt install xclip`)
 
@@ -47,8 +52,9 @@ Ctrl+V
 ```
 
 Result:
+
 - **[Image #N]** placeholder inserted at cursor
-- **ANSI half-block preview** rendered immediately below your message (48×14 default size)
+- **ANSI half-block preview** rendered immediately below your message (48×14 default size)  
   Preview stays visible until you submit — perfect for confirming what got attached!
 
 ### Preview any file
@@ -94,11 +100,13 @@ Create `~/.pi/ansicat.json`:
 ## 🔧 How it works
 
 ### 1. Clipboard read (secure)
+
 - Uses `execFile` (not shell) → safe from command injection
 - Auto-detects Wayland (`wl-paste`) or X11 (`xclip`)
 - Timeout protection (5s) + buffer caps (50MB clipboard, 20MB paste)
 
 ### 2. Instant preview render
+
 ```typescript
 // Decode PNG/BMP via pure zlib
 const img = decodePng(bytes);
@@ -146,19 +154,23 @@ No external dependencies beyond Pi core extensions. All decoding/rendering done 
 ## 📋 Troubleshooting
 
 ### No preview appears after paste
+
 1. Check `wl-paste`/`xclip` installed: `which wl-paste` or `which xclip`
 2. Verify environment variable: `echo $WAYLAND_DISPLAY` or `echo $DISPLAY`
 3. Look for error toast: `ansicat paste failed: ...`
 
 ### Vision fallback fails (`(vision model returned no description)`)
+
 1. Ensure vision model is properly configured in `~/.pi/ansicat.json`
 2. Model must declare `{"input": ["text", "image"]}` in `models.json`
 3. Provider auth must be valid (for registry-based providers like `openai`)
 
 ### Image too large (>20MB)
+
 Extension rejects oversized images with warning toast. Use a smaller screenshot or resize first.
 
 ### Preview too wide/tall
+
 Adjust size: `/ansicat cols=36 maxLines=10`
 
 ## 🤝 Credits
