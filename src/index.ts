@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
@@ -140,37 +140,79 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("ansicat", {
-    description: "Preview size: /ansicat [cols=<n>] [maxLines=<n>]",
-    handler: async (args: string, ctx) => {
-      for (const kv of args.trim().split(/\s+/).filter(Boolean)) { const [k, v] = kv.split("="); const n = Number(v); if (!Number.isFinite(n) || n <= 0) continue; if (k === "cols") _config.cols = Math.min(120, Math.max(20, Math.round(n))); if (k === "maxLines") _config.maxLines = Math.min(40, Math.max(4, Math.round(n))); }
-      ctx.ui.notify(`ansicat: cols=${_config.cols} maxLines=${_config.maxLines}`, "info");
-    },
-  });
-
-  pi.registerCommand("ansi", {
-    description: "Preview an image file as ANSI half-blocks: /ansi <path>",
+    description: "Clipboard ANSI preview: /ansicat [<image-path> | cols=<n> | maxLines=<n>]",
     handler: async (args: string, ctx) => {
       const source = args.trim();
-      if (!source) { ctx.ui.notify("Usage: /ansi <path-to-image>", "warning"); return; }
-      const fs = await import("node:fs/promises");
-      const path = await import("node:path");
-      try {
-        const abs = path.resolve(ctx.cwd, source.replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
-        const bytes = new Uint8Array(await fs.readFile(abs));
-        const ext = path.extname(abs).toLowerCase();
-        const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".bmp" ? "image/bmp" : "image/png";
-        const { art, note } = buildPreview(bytes, mime, path.basename(abs));
-        pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${path.basename(abs)}`, display: true, details: { art, note, label: path.basename(abs) } }, { triggerTurn: false });
-      } catch (err) { ctx.ui.notify(`ansi: ${err instanceof Error ? err.message : String(err)}`, "error"); }
+
+      // Bare argument that exists on disk → file preview (original /ansi).
+      if (source && !source.includes("=") && !source.startsWith("-")) {
+        const fs = await import("node:fs/promises");
+        const path = await import("node:path");
+        try {
+          const abs = path.resolve(ctx.cwd, source.replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
+          const bytes = new Uint8Array(await fs.readFile(abs));
+          const ext = path.extname(abs).toLowerCase();
+          const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".bmp" ? "image/bmp" : "image/png";
+          const { art, note } = buildPreview(bytes, mime, path.basename(abs));
+          pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${path.basename(abs)}`, display: true, details: { art, note, label: path.basename(abs) } }, { triggerTurn: false });
+        } catch (err) { ctx.ui.notify(`ansicat: ${err instanceof Error ? err.message : String(err)}`, "error"); }
+        return;
+      }
+
+      // key=value args → live config; bare → show current config.
+      for (const kv of source.split(/\s+/).filter(Boolean)) {
+        const [k, v] = kv.split("=");
+        const n = Number(v);
+        if (!Number.isFinite(n) || n <= 0) continue;
+        if (k === "cols") _config.cols = Math.min(120, Math.max(20, Math.round(n)));
+        if (k === "maxLines") _config.maxLines = Math.min(40, Math.max(4, Math.round(n)));
+      }
+      ctx.ui.notify(`ansicat: cols=${_config.cols} maxLines=${_config.maxLines} (usage: /ansicat <file> | /ansicat cols=<n> maxLines=<n>)`, "info");
     },
   });
 }
 
 export default function (pi: ExtensionAPI): void {
   registerAnsiCat(pi);
-  pi.on("session_start", (_event, ctx) => {
-    _ctx = ctx; _queue = createImageQueue(); _config = loadConfig();
-    if (_queue && ctx.hasUI) ctx.ui.notify("ansicat: ANSI clipboard preview ready (Ctrl+V)", "info");
+  pi.on("session_start", async (_event, ctx) => {
+    _ctx = ctx;
+    _queue = createImageQueue();
+    _config = loadConfig();
+    if (!ctx.hasUI) return;
+
+    // Zero-config Ctrl+V: the built-in paste binds the same keys. Ask once to
+    // unbind it in ~/.pi/agent/keybindings.json (writing the user's config is
+    // the only way; the extension API cannot override app keybindings).
+    const kbPath = `${process.env.HOME ?? ""}/.pi/agent/keybindings.json`;
+    let needsUnbind = false;
+    try {
+      const raw = JSON.parse(readFileSync(kbPath, "utf8")) as Record<string, unknown>;
+      const bound = raw["app.clipboard.pasteImage"];
+      needsUnbind = bound === undefined || (Array.isArray(bound) && bound.length > 0);
+    } catch {
+      needsUnbind = true; // no file yet
+    }
+    if (needsUnbind) {
+      const ok = await ctx.ui.confirm(
+        "pi-ansicat",
+        "Ctrl+V also triggers pi's built-in image paste (double paste). Unbind the built-in in keybindings.json?",
+      );
+      if (ok) {
+        try {
+          let cfg: Record<string, unknown> = {};
+          try { cfg = JSON.parse(readFileSync(kbPath, "utf8")); } catch { /* fresh file */ }
+          cfg["app.clipboard.pasteImage"] = [];
+          const { writeFileSync, mkdirSync } = await import("node:fs");
+          const path = await import("node:path");
+          mkdirSync(path.dirname(kbPath), { recursive: true });
+          writeFileSync(kbPath, `${JSON.stringify(cfg, null, 2)}\n`);
+          ctx.ui.notify("ansicat: built-in paste unbound, reload to apply", "info");
+        } catch (err) {
+          ctx.ui.notify(`ansicat: could not write keybindings.json (${err instanceof Error ? err.message : String(err)})`, "warning");
+        }
+      }
+    }
+    ctx.ui.notify("ansicat: ANSI clipboard preview ready (Ctrl+V)", "info");
   });
   pi.on("session_shutdown", () => { _ctx = null; _queue = null; _pasting = false; });
 }

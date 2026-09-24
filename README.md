@@ -10,8 +10,10 @@ model first, so nothing gets silently dropped.
 pi install npm:pi-ansicat
 ```
 
-Then `/reload` in pi. If `Ctrl+V` clashes with the built-in paste,
-clear it in `~/.pi/agent/keybindings.json`:
+Then `/reload` in pi. On first start pi-ansicat asks to unbind pi's
+built-in image paste from `Ctrl+V` (it binds the same keys and would
+paste twice). Answer yes once, or set the keybinding yourself in
+`~/.pi/agent/keybindings.json`:
 
 ```json
 { "app.clipboard.pasteImage": [] }
@@ -26,16 +28,12 @@ Linux only. Wayland needs `wl-clipboard`, X11 needs `xclip`.
 Paste with `Ctrl+V`. An `[Image #N]` marker goes into the editor and
 a small ANSI preview renders below the message.
 
-Preview any file:
+One command for everything:
 
 ```text
-/ansi /path/to/image.png
-```
-
-Resize the preview:
-
-```text
-/ansicat cols=32 maxLines=8
+/ansicat /path/to/image.png   # preview any file
+/ansicat cols=32 maxLines=8   # resize the preview (live)
+/ansicat                      # show current size
 ```
 
 ## Config
