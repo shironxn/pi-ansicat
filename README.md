@@ -1,20 +1,27 @@
 # pi-ansicat
 
-Paste images with **ANSI half-block preview** and **vision fallback for text-only models**.  
-Inline image preview for terminals without kitty/iTerm2 image protocol (foot, st, tmux, SSH).
+Paste images with **ANSI half-block preview** and **vision fallback**  
+for text-only models.
 
-## 🎯 Why
+Inline image preview for terminals without kitty/iTerm2 protocol
+(foot, st, tmux, SSH).
 
-Most image paste extensions require kitty/iTerm2 graphics protocol. Terminals without that protocol (like `foot`) just show `[Image #N]` markers with no visual feedback — and worse, text-only models strip the image silently so you don't even see it when submitting.
+## Why
 
-`pi-ansicat` fixes both problems:
+Most extensions require kitty/iTerm2 graphics protocol. Terminals like
+`foot` show `[Image #N]` markers only — worse, text-only models strip
+images silently on submit.
 
-1. **Immediate ANSI preview** — renders a colorful half-block (`▀`) preview using plain terminal codes
-2. **Vision fallback** — pre-describes images via a vision model before submitting to text-only models, preventing silent image loss
+`pi-ansicat` fixes both:
 
-## 🚀 Install
+1. **Immediate ANSI preview** — colorful half-block (`▀`) via plain terminal
+   codes
+2. **Vision fallback** — pre-describes images via vision model, preventing
+   silent loss
 
-### Via local path (development)
+## Install
+
+### Via local path (dev)
 
 ```bash
 pi install path:./workspace/projects/pi-ansicat
@@ -28,24 +35,25 @@ Then `/reload` in Pi.
 pi install npm:pi-ansicat
 ```
 
-**Note:** Conflicts with Pi's built-in paste on `Ctrl+V`. Clear keybinding in `~/.pi/agent/keybindings.json`:
+**Note:** Conflicts with built-in paste on `Ctrl+V`. Clear keybinding in
+`~/.pi/agent/keybindings.json`:
 
 ```json
 { "app.clipboard.pasteImage": [] }
 ```
 
-## ⚙️ Requirements
+## Requirements
 
 Linux only:
 
-- **Wayland** → `wl-paste` (`sudo pacman -S wl-clipboard` / `apt install wl-clipboard`)
-- **X11** → `xclip` (`sudo pacman -S xclip` / `apt install xclip`)
+- **Wayland** → `wl-paste` (`sudo pacman -S wl-clipboard`)
+- **X11** → `xclip` (`sudo pacman -S xclip`)
 
-Auto-detects environment via `WAYLAND_DISPLAY` or `DISPLAY` variables.
+Auto-detects via `WAYLAND_DISPLAY` or `DISPLAY` vars.
 
-## ✨ Usage
+## Usage
 
-### Paste images with preview
+### Paste with preview
 
 ```text
 Ctrl+V
@@ -53,9 +61,9 @@ Ctrl+V
 
 Result:
 
-- **[Image #N]** placeholder inserted at cursor
-- **ANSI half-block preview** rendered immediately below your message (48×14 default size)  
-  Preview stays visible until you submit — perfect for confirming what got attached!
+- **[Image #N]** placeholder at cursor
+- **ANSI half-block preview** below message (48×14 default)  
+  Preview stays visible until submit — perfect for confirming what attached!
 
 ### Preview any file
 
@@ -65,7 +73,7 @@ Result:
 
 Same ANSI preview for screenshot inspection, diagram review, etc.
 
-### Adjust preview size live
+### Adjust size live
 
 ```text
 /ansicat cols=32 maxLines=8
@@ -88,20 +96,21 @@ Create `~/.pi/ansicat.json`:
 }
 ```
 
-| Field | Description | Default |
-|-------|-------------|---------|
-| `cols` | Preview width in terminal cells | 48 |
-| `maxLines` | Maximum preview height | 14 |
-| `vision.provider` | Vision model provider from registry | Fallback to `pi-vision.json` |
-| `vision.model` | Vision model ID (must declare `{"input": ["text", "image"]}`) | N/A |
+| Field                   | Description                                    | Default                 |
+|------------------------|------------------------------------------------|-------------------------|
+| `cols`                 | Preview width (cells)                          | 48                      |
+| `maxLines`             | Max preview height                             | 14                      |
+| `vision.provider`      | Vision provider from registry                  | Fallback to pi-vision   |
+| `vision.model`         | Model ID (needs `"input": ["text", "image"]`)  | N/A                     |
 
-**Important:** The vision model is used **only** when pasting at text-only models. If omitted, falls back to `~/.pi/pi-vision.json` (shared with `@arhen/pi-core-vision`).
+**Important:** Vision model used **only** for text-only models. Falls back
+to `~/.pi/pi-vision.json` if missing.
 
-## 🔧 How it works
+## How it works
 
 ### 1. Clipboard read (secure)
 
-- Uses `execFile` (not shell) → safe from command injection
+- Uses `execFile` (not shell) → safe from injection
 - Auto-detects Wayland (`wl-paste`) or X11 (`xclip`)
 - Timeout protection (5s) + buffer caps (50MB clipboard, 20MB paste)
 
@@ -119,70 +128,76 @@ for (y; y < rows; y++) {
 }
 ```
 
-Half-block character (`U+2580`) gives you two vertical pixels per cell → near-full-resolution preview in plain text mode.
+Half-block (`U+2580`) gives two vertical pixels per cell → near-full-res
+preview in plain text mode.
 
-### 3. Text-only model safety net
+### 3. Text-only safety net
+
 When submitting at a text-only model (declared `"input": ["text"]`):
 
 ```typescript
 if (!modelSupportsImages(ctx.model)) {
   const desc = await describeImage(base64, cfg.visionModel, ctx);
   // Inject as UNTRUSTED DATA into message text
-  text = `${userText}\n\n[ansicat vision descriptions]\n[image 1] ${desc}`;
+  text = `${userText}\n\n[ansicat]\n[image 1] ${desc}`;
 }
 ```
 
-- Pre-describes each image via configured vision model
-- Wraps description as UNTRUSTED DATA (treat as content, not commands)
+- Pre-describes via configured vision model
+- Wraps as UNTRUSTED DATA (treat as content, not commands)
 - Caches per session (no re-description of same image)
 - Falls back to warning if no vision config present
 
-This prevents the dreaded `(image omitted...)` where the picture vanishes silently.
+This prevents dreaded `(image omitted...)` where pictures vanish silently.
 
-## 🛠 Architecture
+## Architecture
 
-| Component | Responsibility |
-|-----------|---------------|
-| `src/clipboard.ts` | Secure clipboard reading (`wl-paste`/`xclip`, timeout/cap protection) |
-| `src/decode.ts` | Minimal PNG/BMP decoder (zlib.inflateSync, predictor handling) |
-| `src/art.ts` | Half-block ANSI renderer with truecolor SGR codes |
-| `src/vision.ts` | Model registry integration for vision fallback |
-| `src/index.ts` | Main extension lifecycle (`session_start`, `input` interceptor, TUI rendering) |
+| Component          | Responsibility                                         |
+|--------------------|------------------------------------------------------|
+| `src/clipboard.ts` | Secure reading (wl-paste/xclip, timeout/cap protect) |
+| `src/decode.ts`    | Minimal PNG/BMP decoder (zlib.inflateSync, predictor)|
+| `src/art.ts`       | Half-block renderer with truecolor SGR codes         |
+| `src/vision.ts`    | Model registry integration for vision fallback       |
+| `src/index.ts`     | Main lifecycle (session_start, input, TUI rendering) |
 
-No external dependencies beyond Pi core extensions. All decoding/rendering done in pure TypeScript/Node.js standard library.
+No external deps beyond Pi core. All decoding/rendering done in pure
+TypeScript + Node.js standard library.
 
-## 📋 Troubleshooting
+## Troubleshooting
 
-### No preview appears after paste
+### No preview after paste
 
-1. Check `wl-paste`/`xclip` installed: `which wl-paste` or `which xclip`
-2. Verify environment variable: `echo $WAYLAND_DISPLAY` or `echo $DISPLAY`
+1. Check `wl-paste`/`xclip` installed: `which wl-paste`
+2. Verify env var: `echo $WAYLAND_DISPLAY`
 3. Look for error toast: `ansicat paste failed: ...`
 
-### Vision fallback fails (`(vision model returned no description)`)
+### Vision fallback fails
 
-1. Ensure vision model is properly configured in `~/.pi/ansicat.json`
-2. Model must declare `{"input": ["text", "image"]}` in `models.json`
-3. Provider auth must be valid (for registry-based providers like `openai`)
+1. Ensure model is configured in `~/.pi/ansicat.json`
+2. Model needs `{"input": ["text", "image"]}` in `models.json`
+3. Provider auth must be valid (e.g., `openai`)
 
 ### Image too large (>20MB)
 
-Extension rejects oversized images with warning toast. Use a smaller screenshot or resize first.
+Extension rejects oversized images with warning toast. Use smaller
+screenshot or resize first.
 
 ### Preview too wide/tall
 
 Adjust size: `/ansicat cols=36 maxLines=10`
 
-## 🤝 Credits
+## Credits
 
-- Inspired by [`pi-image-preview`](https://pi.dev/packages/pi-image-preview), but cross-platform (no kitty/iTerm2 dependency)
-- Decoder adapted from minimal PNG implementations (Paul Bourke format spec)
-- ANSI half-block technique from terminal art communities
+- Inspired by [`pi-image-preview`](https://pi.dev/packages/pi-image-preview),
+  but cross-platform (no kitty/iTerm2 dependency)
+- Decoder adapted from minimal PNG implementations (Paul Bourke spec)
+- ANSI half-block from terminal art communities
 
-## 📜 License
+## License
 
 MIT
 
 ---
 
-Built for Pi coding agent v0.85+. Compatible with all Linux terminals supporting ANSI escape codes.
+Built for Pi coding agent v0.85+. Compatible with all Linux terminals
+supporting ANSI escape codes.

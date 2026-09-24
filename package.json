@@ -23,7 +23,6 @@
   "author": "Shironxn <shironxn@example.com>",
   "license": "MIT",
   "type": "module",
-  "dependencies": {},
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.1.0",
     "@earendil-works/pi-tui": ">=0.1.0"
@@ -31,11 +30,22 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.85.1",
     "@earendil-works/pi-tui": "^0.85.1",
+    "markdownlint-cli": "^0.49.1",
     "typescript": "^6.0.0"
   },
-  "files": ["src"],
+  "files": [
+    "src"
+  ],
   "main": "./src/index.ts",
-  "exports": {".": "./src/index.ts"},
-  "scripts": {"typecheck": "tsc --noEmit"},
-  "pi": {"extensions": ["./src/index.ts"]}
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
 }
