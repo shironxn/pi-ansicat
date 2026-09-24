@@ -39,11 +39,12 @@
   },
   "files": [
     "src",
+    "index.ts",
     "CHANGELOG.md"
   ],
-  "main": "./src/index.ts",
+  "main": "./index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -53,7 +54,7 @@
   },
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./index.ts"
     ]
   }
 }
