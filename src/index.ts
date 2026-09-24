@@ -17,6 +17,9 @@ const PREVIEW_TYPE = "pi-ansicat-preview";
 interface AnsicatConfig {
   cols: number;
   maxLines: number;
+  // true once the user declined the built-in paste prompt this session,
+  // so session_start does not nag on every restart.
+  keybindingPromptDeclined?: boolean;
 }
 const DEFAULT_CONFIG: AnsicatConfig = { cols: 48, maxLines: 14 };
 let _config: AnsicatConfig = { ...DEFAULT_CONFIG };
@@ -216,32 +219,46 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
     handler: async (args: string, ctx) => {
       const source = args.trim();
 
-      // Bare argument that exists on disk → file preview (original /ansi).
-      if (source && !source.includes("=") && !source.startsWith("-")) {
-        const fs = await import("node:fs/promises");
-        const path = await import("node:path");
-        try {
-          const abs = path.resolve(ctx.cwd, source.replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
-          const bytes = new Uint8Array(await fs.readFile(abs));
-          const ext = path.extname(abs).toLowerCase();
-          let mime = "image/png";
-          if (ext === ".jpg" || ext === ".jpeg") mime = "image/jpeg";
-          else if (ext === ".bmp") mime = "image/bmp";
-          const { art, note } = buildPreview(bytes, mime, path.basename(abs));
-          pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${path.basename(abs)}`, display: true, details: { art, note, label: path.basename(abs) } }, { triggerTurn: false });
-        } catch (err) { ctx.ui.notify(`ansicat: ${err instanceof Error ? err.message : String(err)}`, "error"); }
+      // Bare argument without "=" is treated as a file path, but a typo
+      // like `/ansicat cols` would otherwise surface as a confusing ENOENT.
+      // Known config keys (with or without a value) always go to config.
+      const first = source.split(/\s+/)[0] ?? "";
+      const [bareKey] = first.split("=");
+      const looksLikeConfigKey = bareKey === "cols" || bareKey === "maxLines" || bareKey === "help";
+      if (looksLikeConfigKey || source === "") {
+        if (bareKey === "help") {
+          ctx.ui.notify("ansicat usage: /ansicat <file.png> | /ansicat cols=<n> maxLines=<n>", "info");
+          return;
+        }
+        // key=value args adjust the preview live; bare or unknown args show
+        // the current size. Usage lives in one place to match the handler.
+        // (Filenames containing "=" are misrouted here: rename the file.)
+        for (const kv of source.split(/\s+/).filter(Boolean)) {
+          const [k, v] = kv.split("=");
+          const n = Number(v);
+          if (!Number.isFinite(n) || n <= 0) continue;
+          if (k === "cols") _config.cols = Math.min(120, Math.max(20, Math.round(n)));
+          if (k === "maxLines") _config.maxLines = Math.min(40, Math.max(4, Math.round(n)));
+        }
+        ctx.ui.notify(`ansicat: cols=${_config.cols} maxLines=${_config.maxLines} (usage: /ansicat <file.png> | /ansicat cols=<n> maxLines=<n>)`, "info");
         return;
       }
 
-      // key=value args → live config; bare → show current config.
-      for (const kv of source.split(/\s+/).filter(Boolean)) {
-        const [k, v] = kv.split("=");
-        const n = Number(v);
-        if (!Number.isFinite(n) || n <= 0) continue;
-        if (k === "cols") _config.cols = Math.min(120, Math.max(20, Math.round(n)));
-        if (k === "maxLines") _config.maxLines = Math.min(40, Math.max(4, Math.round(n)));
-      }
-      ctx.ui.notify(`ansicat: cols=${_config.cols} maxLines=${_config.maxLines} (usage: /ansicat <file> | /ansicat cols=<n> maxLines=<n>)`, "info");
+      // Otherwise the whole argument is a file path. A typo like
+      // `/ansicat cols` never reaches here: known config keys are
+      // routed to config above, so only real paths hit the filesystem.
+      try {
+        const fs = await import("node:fs/promises");
+        const path = await import("node:path");
+        const abs = path.resolve(ctx.cwd, source.replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
+        const bytes = new Uint8Array(await fs.readFile(abs));
+        const ext = path.extname(abs).toLowerCase();
+        let mime = "image/png";
+        if (ext === ".jpg" || ext === ".jpeg") mime = "image/jpeg";
+        else if (ext === ".bmp") mime = "image/bmp";
+        const { art, note } = buildPreview(bytes, mime, path.basename(abs));
+        pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${path.basename(abs)}`, display: true, details: { art, note, label: path.basename(abs) } }, { triggerTurn: false });
+      } catch (err) { ctx.ui.notify(`ansicat: ${err instanceof Error ? err.message : String(err)}`, "error"); }
     },
   });
 }
@@ -259,13 +276,17 @@ export default function (pi: ExtensionAPI): void {
     // the only way; the extension API cannot override app keybindings).
     const kbPath = `${process.env.HOME ?? ""}/.pi/agent/keybindings.json`;
     const state = readBindings(kbPath);
-    if (state.status === "bound" || state.status === "missing" || state.status === "stringBound") {
+    if (!_config.keybindingPromptDeclined && (state.status === "bound" || state.status === "missing" || state.status === "stringBound")) {
       const ok = await ctx.ui.confirm(
         "pi-ansicat",
         state.status === "stringBound"
           ? "pi-ansicat: app.clipboard.pasteImage uses a string binding, which cannot be auto-unbound. Edit keybindings.json manually."
           : "Ctrl+V also triggers pi's built-in image paste (double paste). Unbind the built-in in keybindings.json? (original is backed up)",
       );
+      if (!ok) {
+        // Declined: do not nag again until pi restarts.
+        _config.keybindingPromptDeclined = true;
+      }
       if (ok && state.status !== "stringBound") {
         try {
           const result = state.status === "missing"
@@ -282,7 +303,6 @@ export default function (pi: ExtensionAPI): void {
         }
       }
     }
-    ctx.ui.notify("ansicat: ANSI clipboard preview ready (Ctrl+V)", "info");
   });
   pi.on("session_shutdown", () => { _ctx = null; _queue = null; _pasting = false; });
 }
