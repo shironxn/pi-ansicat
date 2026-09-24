@@ -1,0 +1,41 @@
+{
+  "name": "pi-ansicat",
+  "version": "0.1.0",
+  "description": "Paste images with ANSI preview + vision fallback for text-only models",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "clipboard",
+    "image",
+    "preview",
+    "ansi",
+    "sixel",
+    "foot",
+    "terminal"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shironxn/pi-ansicat"
+  },
+  "bugs": {
+    "url": "https://github.com/shironxn/pi-ansicat/issues"
+  },
+  "author": "Shironxn <shironxn@example.com>",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {},
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.1.0",
+    "@earendil-works/pi-tui": ">=0.1.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-tui": "^0.85.1",
+    "typescript": "^6.0.0"
+  },
+  "files": ["src"],
+  "main": "./src/index.ts",
+  "exports": {".": "./src/index.ts"},
+  "scripts": {"typecheck": "tsc --noEmit"},
+  "pi": {"extensions": ["./src/index.ts"]}
+}
