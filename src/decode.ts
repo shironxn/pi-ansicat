@@ -14,20 +14,24 @@ const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 export function decodePng(bytes: Uint8Array): DecodedImage {
   for (let i = 0; i < 8; i++) if (bytes[i] !== PNG_SIG[i]) throw new Error("not a PNG");
-  let pos = 8, width = 0, height = 0, bitDepth = 0, colorType = -1;
-  const idat: number[] = [];
+  let pos = 8, width = 0, height = 0, bitDepth = 0, colorType = -1, interlace = 0;
+  const idatChunks: Buffer[] = [];
   while (pos + 8 <= bytes.length) {
     const len = readU32BE(bytes, pos), type = String.fromCharCode(bytes[pos + 4], bytes[pos + 5], bytes[pos + 6], bytes[pos + 7]);
     const data = bytes.subarray(pos + 8, pos + 8 + len);
-    if (type === "IHDR") { width = readU32BE(data, 0); height = readU32BE(data, 4); bitDepth = data[8]!; colorType = data[9]!; }
-    else if (type === "IDAT") for (const b of data) idat.push(b);
+    if (type === "IHDR") { width = readU32BE(data, 0); height = readU32BE(data, 4); bitDepth = data[8]!; colorType = data[9]!; interlace = data[12]!; }
+    else if (type === "IDAT") idatChunks.push(Buffer.from(data));
     else if (type === "IEND") break;
     pos += 12 + len;
   }
   if (width === 0 || height === 0) throw new Error("missing IHDR");
+  if (interlace !== 0) throw new Error("interlaced PNG (Adam7) not supported");
+  if (bitDepth !== 8 || (colorType !== 0 && colorType !== 2 && colorType !== 4 && colorType !== 6)) {
+    throw new Error(`PNG bitDepth=${bitDepth} colorType=${colorType} not supported (8-bit gray/RGB/gray-alpha/RGBA only)`);
+  }
   const channels = colorType === 2 ? 3 : colorType === 6 ? 4 : colorType === 4 ? 2 : 1;
   const stride = width * channels;
-  const raw = inflateSync(Buffer.from(idat));
+  const raw = inflateSync(Buffer.concat(idatChunks));
   const rgba = new Uint8Array(width * height * 4);
   let p = 0;
   const paeth = (a: number, b: number, c: number): number => {

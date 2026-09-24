@@ -10,10 +10,10 @@ model first, so nothing gets silently dropped.
 pi install npm:pi-ansicat
 ```
 
-Then `/reload` in pi. On first start pi-ansicat asks to unbind pi's
-built-in image paste from `Ctrl+V` (it binds the same keys and would
-paste twice). Answer yes once, or set the keybinding yourself in
-`~/.pi/agent/keybindings.json`:
+Then `/reload` in pi. On first start pi-ansicat asks to unbind the built-in
+image paste from `Ctrl+V` (the same keys, otherwise double paste). The
+original keybindings.json gets a backup next to it. Answer yes once, or
+edit it yourself:
 
 ```json
 { "app.clipboard.pasteImage": [] }
@@ -31,7 +31,7 @@ a small ANSI preview renders below the message.
 One command for everything:
 
 ```text
-/ansicat /path/to/image.png   # preview any file
+/ansicat /path/to/image.png   # preview a PNG or BMP file
 /ansicat cols=32 maxLines=8   # resize the preview (live)
 /ansicat                      # show current size
 ```
@@ -54,7 +54,8 @@ reuses `~/.pi/pi-vision.json` when present.
 ## How it works
 
 1. Reads the clipboard with `wl-paste` or `xclip` (auto-detected).
-2. Decodes PNG/BMP with no extra dependencies and renders a
+2. Decodes PNG (8-bit gray, RGB, gray-alpha, RGBA, non-interlaced)
+   or 24-bit BMP with no extra dependencies and renders a
    half-block truecolor preview. It is plain text, so foot, tmux,
    and ssh all show it.
 3. On submit at a text-only model, each image is described once via

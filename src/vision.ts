@@ -36,21 +36,25 @@ export async function describeImage(
   const registry = ctx.modelRegistry;
   const model = registry.find(cfg.provider, cfg.model);
   if (!model) return undefined;
-  const message = await registry.complete(model, {
-    messages: [
-      {
-        role: "user",
-        timestamp: Date.now(),
-        content: [
-          {
-            type: "text",
-            text: cfg.prompt ?? "Describe this image factually for a text-only assistant: subject, style, colors, layout, and any visible text verbatim (OCR). 3-8 sentences.",
-          },
-          { type: "image", data: base64, mimeType },
-        ],
-      } as never,
-    ],
-  });
+  const message = await registry.complete(
+    model,
+    {
+      messages: [
+        {
+          role: "user",
+          timestamp: Date.now(),
+          content: [
+            {
+              type: "text",
+              text: cfg.prompt ?? "Describe this image factually for a text-only assistant: subject, style, colors, layout, and any visible text verbatim (OCR). 3-8 sentences.",
+            },
+            { type: "image", data: base64, mimeType },
+          ],
+        } as never,
+      ],
+      ...(cfg.maxTokens !== undefined ? { maxTokens: cfg.maxTokens } : {}),
+    },
+  );
   const text = (message.content ?? [])
     .flatMap((c) => (c.type === "text" ? [c.text] : []))
     .join("\n")
