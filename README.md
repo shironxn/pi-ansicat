@@ -25,7 +25,8 @@ pi install npm:pi-ansicat
 
 Then `/reload` in pi. On first start, pi-ansicat asks to unbind pi's built-in
 image paste from `Ctrl+V` (the same keys, otherwise you get a double paste).
-The original `keybindings.json` gets a timestamped backup next to it. Answer
+The original `keybindings.json` gets a backup next to it
+(`keybindings.json.bak-ansicat-<timestamp>`). Answer
 yes once, or edit it yourself:
 
 ```json
@@ -83,12 +84,8 @@ Optional `~/.pi/agent/ansicat.json` (respects `PI_CODING_AGENT_DIR`; the old
 }
 ```
 
-Vision is separate, because most people already have it configured somewhere.
-If you run pi-core-vision, its `~/.pi/pi-vision.json` is read automatically and
-you do not need anything else.
-
-If you do not, add a `vision` block so text-only models still get a
-description:
+The vision fallback needs to know which model to use. Add a `vision` block so
+text-only models still get a description:
 
 ```json
 {
@@ -100,8 +97,8 @@ description:
 
 `provider` and `model` name any vision-capable model already configured in pi
 (see `pi --list-models`); the values above are only an example. The `vision`
-block is used only when the active model cannot take images. When both files
-exist, the block in `~/.pi/agent/ansicat.json` wins.
+block is used only when the active model cannot take images. Without it,
+text-only models get a warning and the image is dropped.
 
 ## How it works
 
@@ -127,7 +124,7 @@ exist, the block in `~/.pi/agent/ansicat.json` wins.
 - **Preview is blank or missing.** The format has no converter installed. See
   Requirements. The image still attaches.
 - **"text-only model and no vision config."** Add a `vision` block to
-  `~/.pi/agent/ansicat.json` or create `~/.pi/pi-vision.json`.
+  `~/.pi/agent/ansicat.json`.
 
 ## License
 

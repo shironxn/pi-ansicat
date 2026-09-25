@@ -11,21 +11,15 @@ export interface VisionConfig {
 }
 
 export function loadVisionConfig(): VisionConfig | undefined {
-  // ansicat.json lives under the agent dir now; the legacy ~/.pi location is
-  // still read. pi-vision.json keeps its own hardcoded path because it is
-  // shared with @arhen/pi-core-vision, which reads exactly that file.
-  const [current, legacy] = ansicatConfigPaths();
-  for (const p of [current, legacy]) {
+  // Standalone on purpose: the vision model is configured only in ansicat.json's
+  // `vision` block. No reading of other extensions' config files — pi-core-vision
+  // owns ~/.pi/pi-vision.json and may move or drop it upstream.
+  for (const p of ansicatConfigPaths()) {
     try {
       const raw = JSON.parse(readFileSync(p, "utf8")) as { vision?: VisionConfig };
       if (raw.vision?.provider && raw.vision?.model) return raw.vision;
-    } catch { /* fall through */ }
+    } catch { /* next path */ }
   }
-  try {
-    const p = `${process.env.HOME ?? ""}/.pi/pi-vision.json`;
-    const raw = JSON.parse(readFileSync(p, "utf8")) as VisionConfig;
-    if (raw.provider && raw.model) return raw;
-  } catch { /* no config */ }
   return undefined;
 }
 

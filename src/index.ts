@@ -125,7 +125,7 @@ async function writeBindings(
   const { writeFileSync, mkdirSync, renameSync, copyFileSync } = await import("node:fs");
   const path = await import("node:path");
   mkdirSync(path.dirname(kbPath), { recursive: true });
-  if (existing !== undefined) copyFileSync(kbPath, `${kbPath}.bak.${Date.now()}`);
+  if (existing !== undefined) copyFileSync(kbPath, `${kbPath}.bak-ansicat-${Date.now()}`);
   const tmp = `${kbPath}.tmp.${process.pid}`;
   writeFileSync(tmp, body);
   renameSync(tmp, kbPath);
