@@ -1,16 +1,21 @@
 {
   "name": "pi-ansicat",
   "version": "0.2.2",
-  "description": "Paste images with ANSI preview + vision fallback for text-only models",
+  "description": "Paste clipboard images into pi with a truecolor ANSI preview and a vision fallback for text-only models",
   "keywords": [
     "pi-package",
+    "pi",
     "pi-extension",
     "clipboard",
     "image",
     "preview",
     "ansi",
-    "foot",
-    "vision"
+    "truecolor",
+    "terminal",
+    "wayland",
+    "x11",
+    "vision",
+    "foot"
   ],
   "repository": {
     "type": "git",

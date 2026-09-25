@@ -81,8 +81,9 @@ fallback entirely and get the real image.
 
 ## Config
 
-Optional `~/.pi/agent/ansicat.json` (respects `PI_CODING_AGENT_DIR`; the old
-`~/.pi/ansicat.json` is still read), both keys optional (defaults shown):
+Optional `~/.pi/agent/ansicat.json` — the path follows `$PI_CODING_AGENT_DIR`
+when set (default `~/.pi/agent`); the old `~/.pi/ansicat.json` is still read.
+Both keys are optional, defaults shown:
 
 ```json
 {
