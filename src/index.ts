@@ -71,11 +71,7 @@ interface PendingImageEx extends PendingImage {
   label: string;
 }
 
-// Vision description cache is capped per session so repeated large pastes
-// do not retain unbounded memory.
-
-// Detect whether pi's built-in paste is still bound. Pi accepts a single
-// key string or an array, so both shapes count. Missing file means the
+// Detect whether pi's built-in paste is still bound. Missing file = the
 // built-in defaults (alt+v, ctrl+v) are still active.
 type BindingState =
   | { status: "bound"; cfg: Record<string, unknown>; existing: Buffer }
@@ -84,9 +80,7 @@ type BindingState =
   | { status: "missing" }
   | { status: "unreadable" };
 
-// Single read of keybindings.json. Missing key means pi's built-in defaults
-// (alt+v, ctrl+v) are still active, so it counts as bound. A corrupt file
-// returns "unreadable" and is never written to.
+// A corrupt keybindings.json returns "unreadable" and is never written to.
 function readBindings(kbPath: string): BindingState {
   let existing: Buffer;
   try {
@@ -111,10 +105,8 @@ function readBindings(kbPath: string): BindingState {
   return { status: "unbound" };
 }
 
-// Unbind the built-in paste. Only called with the cfg parsed by
-// readBindings, so other keys are preserved. Existing files get a
-// timestamped .bak backup, and the write goes through a temp file
-// plus rename instead of truncating the live file.
+// Unbind the built-in paste. Only called with the cfg from readBindings,
+// so other keys are preserved; the write is atomic (temp file + rename).
 async function writeBindings(
   kbPath: string,
   cfg: Record<string, unknown>,
@@ -146,9 +138,8 @@ async function buildPreview(bytes: Uint8Array, mimeType: string, label: string):
     let source = bytes;
     let sourceMime = mimeType;
     if (mimeType !== "image/png" && mimeType !== "image/bmp") {
-      // JPEG/WebP/GIF are converted to PNG by an optional system tool. If none
-      // is installed, toPngForPreview returns null and the preview degrades to
-      // "unavailable" exactly as it did before.
+      // No converter installed = toPngForPreview returns null and the
+      // preview degrades to "unavailable".
       const converted = await toPngForPreview(bytes, mimeType);
       if (!converted) return { art: [], note: `${label}: preview unavailable (no converter for ${mimeType})` };
       source = converted;
@@ -183,6 +174,7 @@ let _ctx: ExtensionContext | null = null;
 let _queue: ImageQueue | null = null;
 let _pasting = false;
 const _describeCache = new Map<string, string>();
+// Capped so repeated large pastes do not retain unbounded memory per session.
 const MAX_DESCRIBE_CACHE_ENTRIES = 20;
 
 function cacheDescription(base64: string, desc: string): void {
@@ -274,8 +266,7 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
           return;
         }
         // key=value args adjust the preview live; bare or unknown args show
-        // the current size. Usage lives in one place to match the handler.
-        // (Filenames containing "=" are misrouted here: rename the file.)
+        // the current size. (Filenames containing "=" are misrouted here.)
         for (const kv of source.split(/\s+/).filter(Boolean)) {
           const [k, v] = kv.split("=");
           const n = Number(v);
@@ -287,9 +278,6 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
         return;
       }
 
-      // Otherwise the whole argument is a file path. A typo like
-      // `/ansicat cols` never reaches here: known config keys are
-      // routed to config above, so only real paths hit the filesystem.
       try {
         const fs = await import("node:fs/promises");
         const path = await import("node:path");

@@ -1,9 +1,7 @@
 import { execFile } from "node:child_process";
 
-// Formats the native decoder cannot read. They get converted to PNG first,
-// using an image tool that already exists on the system. Nothing here is a
-// hard dependency: if no converter is installed, preview simply falls back
-// to "unavailable" for these formats, which is what it did before.
+// Formats the native decoder cannot read, converted to PNG via a system
+// tool. No converter installed = no preview, never a wrong one.
 const CONVERTIBLE = new Set(["image/jpeg", "image/webp", "image/gif"]);
 
 const CONVERT_TIMEOUT_MS = 5000;
