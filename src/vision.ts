@@ -10,14 +10,17 @@ export interface VisionConfig {
   maxTokens?: number;
 }
 
-// Structure borrowed from pi-core-vision's task-oriented prompt, extended for
-// pasted photos: without an explicit "name it" instruction, vision models skip
-// identifying public figures/brands and return a generic visual description.
+// Identification leads, description supports — borrowed from pi-core-vision's
+// task-oriented structure. Without an explicit "name it" instruction, vision
+// models drift into generic visual description ("a man in a suit") and skip
+// recognition entirely, even when they know the answer.
 const DEFAULT_DESCRIBE_PROMPT =
-  "Describe this image as text for a text-only assistant that must act on it. Compact but complete: " +
-  "what the image is (photo, screenshot, diagram, chart, UI, meme); the main subject — if a recognizable " +
-  "public figure, landmark, brand, or logo appears, name it; ALL visible text verbatim (OCR); layout, " +
-  "colors, and any detail that changes meaning if omitted. Plain text, no preamble.";
+  "Identify this image for a text-only assistant that must act on it. Lead with what it IS: when the " +
+  "subject is recognizable — a person, fictional character, anime/manga/game/movie title, landmark, " +
+  "product, brand, logo, meme, or artwork — name it (title, series, or character name) instead of " +
+  "describing around it. Then compact but complete: image type (photo, screenshot, diagram, chart, UI); " +
+  "ALL visible text verbatim (OCR); layout, colors, and any detail that changes meaning if omitted. " +
+  "If unsure of an identification, give your best guess with a confidence note. Plain text, no preamble.";
 
 export function loadVisionConfig(): VisionConfig | undefined {
   // Standalone: the vision model is configured only in ansicat.json's `vision`

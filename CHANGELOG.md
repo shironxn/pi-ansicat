@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.6
+
+- The default vision prompt now leads with identification: people, fictional
+  characters, anime/manga/game/movie titles, landmarks, products, brands,
+  memes, and artwork should be named outright — not described around — with a
+  best-guess-plus-confidence when the model is unsure. (The 0.2.5 prompt only
+  nudged public figures/brands; live tests showed generic character details
+  with no recognition of the anime in question.)
+
 ## 0.2.5
 
 - Better default vision prompt: the describe model is now asked to name
