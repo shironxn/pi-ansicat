@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.5
+
+- Better default vision prompt: the describe model is now asked to name
+  recognizable public figures, landmarks, brands, and logos, and to cover
+  what the image *is* (photo/screenshot/diagram/UI) instead of the old
+  generic "subject, style, colors" phrasing — found via a live test where
+  the same model named a person in one run and not another. A custom
+  `prompt` in the `vision` config still overrides this.
+
 ## 0.2.4
 
 - Clipboard pastes are now labeled `from clipboard` instead of

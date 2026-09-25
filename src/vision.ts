@@ -10,6 +10,15 @@ export interface VisionConfig {
   maxTokens?: number;
 }
 
+// Structure borrowed from pi-core-vision's task-oriented prompt, extended for
+// pasted photos: without an explicit "name it" instruction, vision models skip
+// identifying public figures/brands and return a generic visual description.
+const DEFAULT_DESCRIBE_PROMPT =
+  "Describe this image as text for a text-only assistant that must act on it. Compact but complete: " +
+  "what the image is (photo, screenshot, diagram, chart, UI, meme); the main subject — if a recognizable " +
+  "public figure, landmark, brand, or logo appears, name it; ALL visible text verbatim (OCR); layout, " +
+  "colors, and any detail that changes meaning if omitted. Plain text, no preamble.";
+
 export function loadVisionConfig(): VisionConfig | undefined {
   // Standalone: the vision model is configured only in ansicat.json's `vision`
   // block — no reading of other extensions' config files (may move or vanish).
@@ -46,7 +55,7 @@ export async function describeImage(
           content: [
             {
               type: "text",
-              text: cfg.prompt ?? "Describe this image factually for a text-only assistant: subject, style, colors, layout, and any visible text verbatim (OCR). 3-8 sentences.",
+              text: cfg.prompt ?? DEFAULT_DESCRIBE_PROMPT,
             },
             { type: "image", data: base64, mimeType },
           ],
