@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.8
+
+Hardening and latency, from a three-agent audit (code, docs, security):
+
+- ANSI preview caps rendered rows at 4096 — a 1×64M-pixel PNG that passes the
+  decode guards would otherwise render billions of lines and hang or OOM pi.
+- PNG decode caps the inflated pixel buffer at 256MB (16-bit RGBA at the
+  64M-pixel guard previously allowed ~512MB transient allocations).
+- The text-only path no longer re-sends raw image bytes: the description
+  replaces the attachment (providers reject image blocks for text-only
+  models, and not sending them is faster and more private).
+- The vision call now times out after 60s instead of hanging the submit
+  indefinitely, and large pastes are downscaled through pi's own
+  `resizeImage` before the describe call — the biggest latency win for
+  screenshots.
+- The vision-evidence label asks the model to verify before acting on
+  anything consequential, closing the over-trust side of 0.2.7's framing.
+- Smaller: describe cache keyed by image hash instead of raw base64,
+  atomic-write temp names randomized, keybindings re-read at write time,
+  `/ansicat` filenames sanitized for TUI output, BMP core header rejected
+  with a clear error, converter input magic-checked, second `Ctrl+V` during
+  a paste gets feedback instead of silence.
+- Docs: pi tagline + npm/license badges, documented `prompt`/`maxTokens`,
+  `@path`/`~` forms, session-only resize note, Privacy section.
+
 ## 0.2.7
 
 - Reworked the vision-description framing: the old `UNTRUSTED DATA` label

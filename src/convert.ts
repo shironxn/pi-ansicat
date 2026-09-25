@@ -18,6 +18,15 @@ const CONVERTERS: Converter[] = [
 
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
+// ImageMagick sniffs content itself, so bytes whose magic does not match the
+// declared MIME could reach whatever coders the system policy allows. Gate on
+// magic before spawning.
+const MAGIC: Record<string, (b: Buffer) => boolean> = {
+  "image/jpeg": (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  "image/gif": (b) => b.length >= 6 && b.toString("latin1", 0, 6).startsWith("GIF8"),
+  "image/webp": (b) => b.length >= 12 && b.toString("latin1", 0, 4) === "RIFF" && b.toString("latin1", 8, 12) === "WEBP",
+};
+
 function isPng(bytes: Buffer): boolean {
   if (bytes.length < 8) return false;
   for (let i = 0; i < 8; i++) if (bytes[i] !== PNG_SIG[i]) return false;
@@ -50,6 +59,8 @@ function runConverter(c: Converter, input: Uint8Array): Promise<Buffer | null> {
  */
 export async function toPngForPreview(bytes: Uint8Array, mimeType: string): Promise<Uint8Array | null> {
   if (!CONVERTIBLE.has(mimeType)) return null;
+  const magic = MAGIC[mimeType];
+  if (magic && !magic(Buffer.from(bytes))) return null;
   for (const c of CONVERTERS) {
     const out = await runConverter(c, bytes);
     if (out) return new Uint8Array(out);

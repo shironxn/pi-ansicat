@@ -5,7 +5,9 @@ const RESET = "\x1b[0m";
 export function renderHalfBlocks(img: DecodedImage, maxCols: number): string[] {
   const cols = Math.max(20, Math.min(120, maxCols));
   const scale = cols / img.width;
-  const rows = Math.max(1, Math.round(img.height * scale * 0.5));
+  // Extreme aspect ratios (a 1×64M-pixel PNG passes the decode guards) would
+  // render billions of lines before buildPreview's shrink loop can run.
+  const rows = Math.min(4096, Math.max(1, Math.round(img.height * scale * 0.5)));
   const w = cols;
   const h = rows * 2;
 

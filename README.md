@@ -1,5 +1,10 @@
 # pi-ansicat
 
+An extension for [pi](https://pi.dev), the coding agent ([source](https://github.com/earendil-works/pi)).
+
+[![npm](https://img.shields.io/npm/v/pi-ansicat)](https://www.npmjs.com/package/pi-ansicat)
+[![license](https://img.shields.io/npm/l/pi-ansicat)](./LICENSE)
+
 Paste an image into pi and see it. pi-ansicat reads the clipboard, draws a
 truecolor ANSI preview under your message, and attaches the image to the
 prompt. It also keeps text-only models in the loop: before submit, a vision
@@ -52,26 +57,27 @@ three still attach to the message, just without a preview.
 
 ## Use
 
-Paste with `Ctrl+V`. The preview appears below your message as a custom
+Paste with `Ctrl+V` (`Alt+V` and `Ctrl+Alt+V` work too). The preview appears
+below your message as a custom
 message block; the `[Image #N]` marker in the editor is what actually attaches
 the image on submit. Delete the marker and the image is not sent.
 
 One command handles previews and sizing:
 
 ```text
-/ansicat /path/to/image.png   # preview an image file
-/ansicat cols=32 maxLines=8   # resize the preview (applies live)
+/ansicat /path/to/image.png   # preview an image file (@path and ~/... also work)
+/ansicat cols=32 maxLines=8   # resize the preview (applies live, this session only)
 /ansicat                      # show the current size
 ```
 
 File previews share the clipboard's 20MB cap, and formats outside
-PNG/BMP/JPEG/WebP/GIF report `format not supported`.
+PNG/BMP/JPEG/WebP/GIF report the format as unsupported.
 
 ## Why the vision fallback
 
 A text-only model (most fast/cheap models) receives an image attachment and
 cannot read it. Pi strips the image, and the model never learns what you
-pasted. That is the silent drop this extension exists to prevent.
+pasted.
 
 The fallback runs only for those models. Before submit, pi-ansicat sends each
 attached image to a vision model you configure, appends the returned
@@ -104,7 +110,9 @@ text-only models still get a description:
 ```
 
 `provider` and `model` name any vision-capable model already configured in pi
-(see `pi --list-models`); the values above are only an example. The `vision`
+(see `pi --list-models`); the values above are only an example. Optional
+`prompt` replaces the built-in describe prompt; `maxTokens` caps the
+description length. The `vision`
 block is used only when the active model cannot take images. Without it,
 text-only models get a warning and the image is dropped.
 
@@ -118,8 +126,15 @@ text-only models get a warning and the image is dropped.
 3. Converts JPEG, WebP, and GIF to PNG first, using a system image tool when
    one is present. No converter means no preview, never a wrong one.
 4. On submit at a text-only model, describes each image once and appends the
-   description as untrusted text. Descriptions are cached per session so the
-   same image is not described twice.
+   description as labeled machine-generated evidence. Descriptions are cached
+   per session so the same image is not described twice.
+
+## Privacy
+
+Images processed by the vision fallback go only to the provider you configure
+in `ansicat.json` — nothing else leaves your machine. Clipboard reads,
+decoding, and previews are all local; nothing is logged, cached to disk, or
+sent anywhere else.
 
 ## Troubleshooting
 

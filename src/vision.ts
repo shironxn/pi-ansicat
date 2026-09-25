@@ -44,6 +44,7 @@ export async function describeImage(
   mimeType: string,
   ctx: ExtensionContext,
   cfg: VisionConfig,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   const registry = ctx.modelRegistry;
   const model = registry.find(cfg.provider, cfg.model);
@@ -66,6 +67,7 @@ export async function describeImage(
       ],
       ...(cfg.maxTokens !== undefined ? { maxTokens: cfg.maxTokens } : {}),
     },
+    { signal },
   );
   const text = (message.content ?? [])
     .flatMap((c) => (c.type === "text" ? [c.text] : []))

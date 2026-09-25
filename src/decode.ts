@@ -109,6 +109,9 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
   const rowBytes = Math.ceil((width * bitsPerPixel) / 8);
   const bpp = Math.max(1, Math.ceil(bitsPerPixel / 8));
   const rawLen = height * (rowBytes + 1);
+  // The pixel-area guard bounds w×h but not bytes-per-pixel: 16-bit RGBA at
+  // 64M px would allocate ~512MB here. Cap the inflated size absolutely.
+  if (rawLen > 256 * 1024 * 1024) throw new Error("PNG too large to decode");
   // maxOutputLength bounds the inflate allocation (zip-bomb guard); the
   // length check rejects streams that end early, which would otherwise
   // decode as silent black rows.
@@ -163,6 +166,9 @@ export function decodeBmp(bytes: Uint8Array): DecodedImage {
   if (bytes[0] !== 0x42 || bytes[1] !== 0x4d) throw new Error("not a BMP");
   const dataOff = bytes[10]! | (bytes[11]! << 8) | (bytes[12]! << 16) | (bytes[13]! << 24);
   const headerSize = bytes[14]! | (bytes[15]! << 8) | (bytes[16]! << 16) | (bytes[17]! << 24);
+  // BITMAPCOREHEADER (size 12) uses 2-byte dims and 3-byte palette entries —
+  // a layout this decoder does not implement. Reject rather than misparse.
+  if (headerSize < 40) throw new Error("BMP core header not supported");
   const width = bytes[18]! | (bytes[19]! << 8) | (bytes[20]! << 16) | (bytes[21]! << 24);
   const heightRaw = bytes[22]! | (bytes[23]! << 8) | (bytes[24]! << 16) | (bytes[25]! << 24);
   const bpp = bytes[28]! | (bytes[29]! << 8);
