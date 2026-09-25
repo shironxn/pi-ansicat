@@ -75,9 +75,9 @@ pasted. That is the silent drop this extension exists to prevent.
 
 The fallback runs only for those models. Before submit, pi-ansicat sends each
 attached image to a vision model you configure, appends the returned
-description to your prompt, and labels it as untrusted data so the model treats
-it as content, not instructions. Models that already accept images skip the
-fallback entirely and get the real image.
+description to your prompt, and labels it as machine-generated evidence —
+data the model can reason from, never instructions to follow. Models that
+already accept images skip the fallback entirely and get the real image.
 
 ## Config
 

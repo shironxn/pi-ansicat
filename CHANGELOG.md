@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.7
+
+- Reworked the vision-description framing: the old `UNTRUSTED DATA` label
+  taught main models to dismiss the description — a live test had the vision
+  model correctly identify a meme face-swap, and the main model refuse to
+  repeat it. The label now presents descriptions as machine-generated
+  evidence to answer from (with their stated confidence) while keeping the
+  hard wall against following instructions embedded in images.
+
 ## 0.2.6
 
 - The default vision prompt now leads with identification: people, fictional
