@@ -40,6 +40,7 @@
   "files": [
     "src",
     "index.ts",
+    "assets",
     "CHANGELOG.md"
   ],
   "main": "./index.ts",

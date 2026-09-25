@@ -17,6 +17,14 @@ that cannot see images still knows what you pasted.
   images, each pasted image is described once and the text is appended to the
   prompt.
 
+## Demo
+
+Paste with `Ctrl+V` — the `[Image #N]` marker lands in the editor and a
+truecolor preview renders right below it. This is the real renderer output
+(`renderHalfBlocks`, default 14 lines), drawn as a terminal mock:
+
+![pi-ansicat: ANSI half-block preview of a clipboard paste](assets/preview.png)
+
 ## Install
 
 ```bash
