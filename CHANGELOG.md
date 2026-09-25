@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4
+
+- Clipboard pastes are now labeled `from clipboard` instead of
+  `clipboard.png` — models were treating the old path-looking label as a
+  real file and wasting a `read` call on ENOENT.
+- `/ansicat @path/to/image` now works: a leading `@` (pi's editor
+  file-reference convention) is stripped instead of surfacing as ENOENT.
+
 ## 0.2.3
 
 - Metadata refresh: clearer description and more searchable keywords

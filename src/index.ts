@@ -193,8 +193,8 @@ async function doPaste(): Promise<void> {
     const image = await readClipboardImage();
     if (!image) { _ctx.ui.notify("No image found in clipboard.", "warning"); return; }
     if (image.bytes.length > MAX_FILE_SIZE_BYTES) { _ctx.ui.notify(`Image too large (${(image.bytes.length / 1048576).toFixed(1)}MB > 20MB).`, "warning"); return; }
-    const [, subtype] = image.mimeType.split("/");
-    const label = `clipboard.${subtype ?? "png"}`;
+    // Not a filename: models treat path-looking labels as files to read.
+    const label = "from clipboard";
     const { art, note } = await buildPreview(image.bytes, image.mimeType, label);
     const marker = queueImage(_queue, { id: "", base64: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType, art, label }, _ctx);
     _pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${marker.text.trim()} (${label})`, display: true, details: { art, note, label, marker: marker.text.trim() } }, { triggerTurn: false });
@@ -281,7 +281,8 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
       try {
         const fs = await import("node:fs/promises");
         const path = await import("node:path");
-        const abs = path.resolve(ctx.cwd, source.replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
+        // A leading "@" is pi's editor file-reference habit — treat it as the plain path.
+        const abs = path.resolve(ctx.cwd, source.replace(/^@/, "").replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
         const bytes = new Uint8Array(await fs.readFile(abs));
         // Same cap as the paste path: buildPreview would otherwise happily
         // decode a multi-gigabyte file picked by typo.
