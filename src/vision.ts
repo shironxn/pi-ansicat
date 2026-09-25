@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import { ansicatConfigPaths } from "./config.js";
+
 export interface VisionConfig {
   provider: string;
   model: string;
@@ -9,11 +11,16 @@ export interface VisionConfig {
 }
 
 export function loadVisionConfig(): VisionConfig | undefined {
-  try {
-    const p = `${process.env.HOME ?? ""}/.pi/ansicat.json`;
-    const raw = JSON.parse(readFileSync(p, "utf8")) as { vision?: VisionConfig };
-    if (raw.vision?.provider && raw.vision?.model) return raw.vision;
-  } catch { /* fall through */ }
+  // ansicat.json lives under the agent dir now; the legacy ~/.pi location is
+  // still read. pi-vision.json keeps its own hardcoded path because it is
+  // shared with @arhen/pi-core-vision, which reads exactly that file.
+  const [current, legacy] = ansicatConfigPaths();
+  for (const p of [current, legacy]) {
+    try {
+      const raw = JSON.parse(readFileSync(p, "utf8")) as { vision?: VisionConfig };
+      if (raw.vision?.provider && raw.vision?.model) return raw.vision;
+    } catch { /* fall through */ }
+  }
   try {
     const p = `${process.env.HOME ?? ""}/.pi/pi-vision.json`;
     const raw = JSON.parse(readFileSync(p, "utf8")) as VisionConfig;

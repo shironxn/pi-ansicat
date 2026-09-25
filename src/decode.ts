@@ -94,6 +94,12 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
   const { width, height, bitDepth, colorType, interlace, palette, trns, idat } = parseChunks(bytes);
   if (width === 0 || height === 0) throw new Error("missing IHDR");
   if (interlace !== 0) throw new Error("interlaced PNG (Adam7) not supported");
+  // Dimension sanity before any allocation: IHDR is unverified input and a
+  // tiny file can declare gigapixel sizes. 64M pixels (~16000x4000) is far
+  // above any real screenshot.
+  if (!Number.isSafeInteger(width * height) || width * height > 64_000_000) {
+    throw new Error(`PNG dimensions ${width}x${height} rejected`);
+  }
   const channels = CHANNELS[colorType];
   if (channels === undefined) throw new Error(`PNG colorType=${colorType} not supported`);
   if (![1, 2, 4, 8, 16].includes(bitDepth)) throw new Error(`PNG bitDepth=${bitDepth} not supported`);
@@ -102,7 +108,13 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
   const bitsPerPixel = channels * bitDepth;
   const rowBytes = Math.ceil((width * bitsPerPixel) / 8);
   const bpp = Math.max(1, Math.ceil(bitsPerPixel / 8));
-  const pixels = unfilter(inflateSync(Buffer.concat(idat)), height, rowBytes, bpp);
+  const rawLen = height * (rowBytes + 1);
+  // maxOutputLength bounds the inflate allocation (zip-bomb guard); the
+  // length check rejects streams that end early, which would otherwise
+  // decode as silent black rows.
+  const raw = inflateSync(Buffer.concat(idat), { maxOutputLength: rawLen });
+  if (raw.length !== rawLen) throw new Error("PNG pixel data truncated");
+  const pixels = unfilter(raw, height, rowBytes, bpp);
 
   const maxVal = (1 << bitDepth) - 1;
   const scale = (v: number): number => bitDepth === 8 ? v : bitDepth === 16 ? v >> 8 : Math.round((v * 255) / maxVal);
@@ -162,8 +174,9 @@ export function decodeBmp(bytes: Uint8Array): DecodedImage {
   if (width <= 0) throw new Error("BMP width must be positive");
 
   const height = Math.abs(heightRaw);
+  if (height <= 0) throw new Error("BMP height must be positive");
   const bottomUp = heightRaw > 0;
-  const rgba = new Uint8Array(width * height * 4);
+  const rowStride = Math.floor((width * bpp + 31) / 32) * 4;
 
   // BITFIELDS masks: inside the header for V4+ (>=52 bytes), otherwise in the
   // 12 bytes right after it. Masks are followed as declared, so both the
@@ -171,7 +184,8 @@ export function decodeBmp(bytes: Uint8Array): DecodedImage {
   let bitFields: { r: number; g: number; b: number; a: number; rShift: number; gShift: number; bShift: number; aShift: number } | null = null;
   if (comp === 3) {
     const off = headerSize >= 52 ? 54 : 14 + headerSize;
-    if (off + 12 > bytes.length) throw new Error("BMP bitfields truncated");
+    const need = headerSize >= 52 ? 16 : 12; // 16 = R/G/B masks plus alpha
+    if (off + need > bytes.length) throw new Error("BMP bitfields truncated");
     const rMask = readU32LE(bytes, off);
     const gMask = readU32LE(bytes, off + 4);
     const bMask = readU32LE(bytes, off + 8);
@@ -198,7 +212,15 @@ export function decodeBmp(bytes: Uint8Array): DecodedImage {
     palette = bytes.subarray(pStart, pStart + count * 4);
   }
 
-  const rowStride = Math.floor((width * bpp + 31) / 32) * 4;
+  // Bounds BEFORE allocating: the header can declare dimensions far larger
+  // than the file holds, and reads past the end would silently decode as
+  // black pixels instead of failing.
+  if (!Number.isSafeInteger(width * height) || width * height > 64_000_000) {
+    throw new Error(`BMP dimensions ${width}x${height} rejected`);
+  }
+  if (dataOff < 0 || dataOff + height * rowStride > bytes.length) throw new Error("BMP pixel data truncated");
+
+  const rgba = new Uint8Array(width * height * 4);
   for (let y = 0; y < height; y++) {
     const row = bottomUp ? height - 1 - y : y;
     const rowStart = dataOff + row * rowStride;

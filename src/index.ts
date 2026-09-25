@@ -6,6 +6,7 @@ import type { KeyId } from "@earendil-works/pi-tui";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 
 import { renderHalfBlocks } from "./art.js";
+import { agentDir, ansicatConfigPaths } from "./config.js";
 import { readClipboardImage } from "./clipboard.js";
 import { toPngForPreview } from "./convert.js";
 import { decodeImage } from "./decode.js";
@@ -14,6 +15,7 @@ import { describeImage, loadVisionConfig, modelSupportsImages } from "./vision.j
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const PREVIEW_TYPE = "pi-ansicat-preview";
+const UNSUPPORTED_PREVIEW = new Set([".tiff", ".tif", ".ico", ".svg", ".avif", ".heic", ".heif"]);
 
 interface AnsicatConfig {
   cols: number;
@@ -25,25 +27,38 @@ interface AnsicatConfig {
 const DEFAULT_CONFIG: AnsicatConfig = { cols: 48, maxLines: 14 };
 let _config: AnsicatConfig = { ...DEFAULT_CONFIG };
 
-function loadConfig(): AnsicatConfig {
+// First path with a readable JSON object wins; a corrupt current file
+// therefore falls back to the legacy one instead of resetting silently.
+function parseConfigFile(p: string): Partial<AnsicatConfig> | null {
   try {
-    const p = `${process.env.HOME ?? ""}/.pi/ansicat.json`;
-    const raw = JSON.parse(readFileSync(p, "utf8")) as Partial<AnsicatConfig>;
+    const parsed = JSON.parse(readFileSync(p, "utf8")) as Partial<AnsicatConfig>;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch { return null; }
+}
+
+function loadConfig(): AnsicatConfig {
+  for (const p of ansicatConfigPaths()) {
+    const raw = parseConfigFile(p);
+    if (!raw) continue;
     const cols = Math.max(20, Math.min(120, Number(raw.cols) || DEFAULT_CONFIG.cols));
     const maxLines = Math.max(4, Math.min(40, Number(raw.maxLines) || DEFAULT_CONFIG.maxLines));
     return { cols, maxLines, keybindingPromptDeclined: raw.keybindingPromptDeclined === true };
-  } catch { return { ...DEFAULT_CONFIG }; }
+  }
+  return { ...DEFAULT_CONFIG };
 }
 
 // Record the declined prompt in the extension's own config so the next
 // session does not ask again. Read-merge-write keeps unrelated keys
 // (cols, maxLines, vision) intact, and the write is atomic.
 async function persistDeclined(current: AnsicatConfig): Promise<void> {
-  const p = `${process.env.HOME ?? ""}/.pi/ansicat.json`;
+  const [p, legacy] = ansicatConfigPaths();
   const { writeFileSync, mkdirSync, renameSync } = await import("node:fs");
   const path = await import("node:path");
   let raw: Record<string, unknown> = {};
-  try { raw = JSON.parse(readFileSync(p, "utf8")) as Record<string, unknown>; } catch { /* start fresh */ }
+  for (const src of [p, legacy]) {
+    const parsed = parseConfigFile(src);
+    if (parsed) { raw = parsed as Record<string, unknown>; break; }
+  }
   const next = { ...raw, cols: current.cols, maxLines: current.maxLines, keybindingPromptDeclined: true };
   mkdirSync(path.dirname(p), { recursive: true });
   const tmp = `${p}.tmp.${process.pid}`;
@@ -280,12 +295,25 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
         const path = await import("node:path");
         const abs = path.resolve(ctx.cwd, source.replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
         const bytes = new Uint8Array(await fs.readFile(abs));
+        // Same cap as the paste path: buildPreview would otherwise happily
+        // decode a multi-gigabyte file picked by typo.
+        if (bytes.length > MAX_FILE_SIZE_BYTES) {
+          ctx.ui.notify(`ansicat: file too large (${(bytes.length / 1048576).toFixed(1)}MB > 20MB)`, "error");
+          return;
+        }
         const ext = path.extname(abs).toLowerCase();
         let mime = "image/png";
         if (ext === ".jpg" || ext === ".jpeg") mime = "image/jpeg";
         else if (ext === ".bmp") mime = "image/bmp";
         else if (ext === ".webp") mime = "image/webp";
         else if (ext === ".gif") mime = "image/gif";
+        // Formats with neither a decoder nor a converter path. Without this
+        // check they surface as a bare "not a PNG" from the decoder.
+        if (UNSUPPORTED_PREVIEW.has(ext)) {
+          const note = `${path.basename(abs)}: preview unavailable (image/${ext.slice(1)} not supported — png/bmp native, jpeg/webp/gif via converter)`;
+          pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${path.basename(abs)}`, display: true, details: { art: [], note, label: path.basename(abs) } }, { triggerTurn: false });
+          return;
+        }
         const { art, note } = await buildPreview(bytes, mime, path.basename(abs));
         pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${path.basename(abs)}`, display: true, details: { art, note, label: path.basename(abs) } }, { triggerTurn: false });
       } catch (err) { ctx.ui.notify(`ansicat: ${err instanceof Error ? err.message : String(err)}`, "error"); }
@@ -302,9 +330,9 @@ export default function (pi: ExtensionAPI): void {
     if (!ctx.hasUI) return;
 
     // Zero-config Ctrl+V: the built-in paste binds the same keys. Ask once to
-    // unbind it in ~/.pi/agent/keybindings.json (writing the user's config is
+    // unbind it in <agent-dir>/keybindings.json (writing the user's config is
     // the only way; the extension API cannot override app keybindings).
-    const kbPath = `${process.env.HOME ?? ""}/.pi/agent/keybindings.json`;
+    const kbPath = `${agentDir()}/keybindings.json`;
     const state = readBindings(kbPath);
     if (!_config.keybindingPromptDeclined && (state.status === "bound" || state.status === "missing" || state.status === "stringBound")) {
       const ok = await ctx.ui.confirm(

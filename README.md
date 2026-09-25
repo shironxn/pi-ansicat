@@ -73,7 +73,8 @@ you paste from the clipboard. If you use both, they do not overlap.
 
 ## Config
 
-Optional `~/.pi/ansicat.json`, both keys optional (defaults shown):
+Optional `~/.pi/agent/ansicat.json` (respects `PI_CODING_AGENT_DIR`; the old
+`~/.pi/ansicat.json` is still read), both keys optional (defaults shown):
 
 ```json
 {
@@ -100,7 +101,7 @@ description:
 `provider` and `model` name any vision-capable model already configured in pi
 (see `pi --list-models`); the values above are only an example. The `vision`
 block is used only when the active model cannot take images. When both files
-exist, the block in `~/.pi/ansicat.json` wins.
+exist, the block in `~/.pi/agent/ansicat.json` wins.
 
 ## How it works
 
@@ -126,7 +127,7 @@ exist, the block in `~/.pi/ansicat.json` wins.
 - **Preview is blank or missing.** The format has no converter installed. See
   Requirements. The image still attaches.
 - **"text-only model and no vision config."** Add a `vision` block to
-  `~/.pi/ansicat.json` or create `~/.pi/pi-vision.json`.
+  `~/.pi/agent/ansicat.json` or create `~/.pi/pi-vision.json`.
 
 ## License
 

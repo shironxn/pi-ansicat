@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1
+
+- Hardening for untrusted image headers: PNG and BMP now reject absurd
+  declared dimensions (over 64M pixels) before allocating, `inflateSync` is
+  bounded by the exact expected pixel size, and truncated BMP/PNG pixel data
+  fails with a clear error instead of decoding as silent black rows.
+- `/ansicat <file>` now enforces the same 20MB cap as the clipboard path.
+- Known-unsupported formats (`.tiff`, `.ico`, `.svg`, `.avif`, `.heic`, ...)
+  report a clear "format not supported" note instead of a bare "not a PNG".
+- Config follows the pi convention: `ansicat.json` and `keybindings.json`
+  resolve under `PI_CODING_AGENT_DIR` (default `~/.pi/agent`); the legacy
+  `~/.pi/ansicat.json` is still read. `pi-vision.json` keeps its shared
+  path for pi-core-vision compatibility.
+
 ## 0.2.0
 
 - PNG: full bit-depth support (1/2/4/8/16) and all color types

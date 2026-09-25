@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { deflateSync } from "node:zlib";
 
 import { decodeImage } from "../src/decode.ts";
 import { toPngForPreview } from "../src/convert.ts";
@@ -61,6 +62,53 @@ test("rejects non-image bytes", () => {
 
 test("converter returns null for formats it does not handle", async () => {
   assert.equal(await toPngForPreview(new Uint8Array([1]), "image/png"), null);
+});
+
+// Hand-built PNGs: the decoder never checks CRC, so chunk CRCs are zeros.
+function pngChunk(type: string, data: Buffer): Buffer {
+  const out = Buffer.alloc(12 + data.length);
+  out.writeUInt32BE(data.length, 0);
+  out.write(type, 4, "latin1");
+  data.copy(out, 8);
+  return out;
+}
+
+function ihdr(width: number, height: number, bitDepth: number, colorType: number): Buffer {
+  const d = Buffer.alloc(13);
+  d.writeUInt32BE(width, 0);
+  d.writeUInt32BE(height, 4);
+  d[8] = bitDepth; d[9] = colorType;
+  return d;
+}
+
+const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+test("rejects absurd PNG dimensions before allocating", () => {
+  const bytes = Buffer.concat([
+    PNG_SIG,
+    pngChunk("IHDR", ihdr(20000, 60000, 8, 6)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+  assert.throws(() => decodeImage(new Uint8Array(bytes), "image/png"), /rejected/);
+});
+
+test("rejects short PNG pixel stream", () => {
+  // 2x1 RGBA8 needs 1 * (2*4 + 1) = 9 filtered bytes; stream only has 4.
+  const bytes = Buffer.concat([
+    PNG_SIG,
+    pngChunk("IHDR", ihdr(2, 1, 8, 6)),
+    pngChunk("IDAT", deflateSync(Buffer.alloc(4))),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+  assert.throws(() => decodeImage(new Uint8Array(bytes), "image/png"), /truncated/);
+});
+
+test("rejects truncated BMP pixel data", () => {
+  const full = Buffer.from(FIXTURES.bmp24.b64, "base64");
+  const dataOff = full.readUInt32LE(10);
+  const rowStride = Math.floor((3 * 24 + 31) / 32) * 4; // 3px, 24bpp, padded to 4
+  const cut = full.subarray(0, dataOff + rowStride); // 1 row of 2
+  assert.throws(() => decodeImage(new Uint8Array(cut), "image/bmp"), /truncated/);
 });
 
 test("decodes 32-bit BITFIELDS BMP (masked channels)", () => {

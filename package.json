@@ -1,6 +1,6 @@
 {
   "name": "pi-ansicat",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Paste images with ANSI preview + vision fallback for text-only models",
   "keywords": [
     "pi-package",
