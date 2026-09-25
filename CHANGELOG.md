@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3
+
+- Metadata refresh: clearer description and more searchable keywords
+  (visible on npm and the pi.dev package gallery).
+- README: clearer config-path wording; documented the 20MB file-preview
+  cap and the unsupported-format note.
+- Development tooling: dropped markdownlint; `package-lock.json` synced.
+
 ## 0.2.2
 
 - Fully standalone docs: removed the last references to other extensions from
