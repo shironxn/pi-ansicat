@@ -1,10 +1,19 @@
 # Changelog
 
+## 0.2.2
+
+- Fully standalone docs: removed the last references to other extensions from
+  the README and source comments.
+- `peerDependencies` now use the `"*"` range the pi packages docs prescribe
+  for host-provided packages (`@earendil-works/pi-coding-agent`,
+  `@earendil-works/pi-tui`).
+- Added `pi.image` (the demo render) for the pi package gallery.
+
 ## 0.2.1
 
 - **Standalone config**: the vision model is read only from `ansicat.json`'s
   `vision` block. The optional `~/.pi/pi-vision.json` fallback (a file owned
-  by pi-core-vision) was removed — installing pi-ansicat no longer touches
+  by another extension) was removed — installing pi-ansicat no longer touches
   or depends on any other extension.
 - Hardening for untrusted image headers: PNG and BMP now reject absurd
   declared dimensions (over 64M pixels) before allocating, `inflateSync` is

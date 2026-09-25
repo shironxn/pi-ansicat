@@ -12,8 +12,8 @@ export interface VisionConfig {
 
 export function loadVisionConfig(): VisionConfig | undefined {
   // Standalone on purpose: the vision model is configured only in ansicat.json's
-  // `vision` block. No reading of other extensions' config files — pi-core-vision
-  // owns ~/.pi/pi-vision.json and may move or drop it upstream.
+  // `vision` block. No reading of other extensions' config files — they are not
+  // ours, and their owners may move or drop them at any time.
   for (const p of ansicatConfigPaths()) {
     try {
       const raw = JSON.parse(readFileSync(p, "utf8")) as { vision?: VisionConfig };

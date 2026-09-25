@@ -76,10 +76,6 @@ description to your prompt, and labels it as untrusted data so the model treats
 it as content, not instructions. Models that already accept images skip the
 fallback entirely and get the real image.
 
-Note that this is separate from pi-core-vision: that extension overrides the
-`read` tool so pi can look at image files on disk. pi-ansicat handles images
-you paste from the clipboard. If you use both, they do not overlap.
-
 ## Config
 
 Optional `~/.pi/agent/ansicat.json` (respects `PI_CODING_AGENT_DIR`; the old
