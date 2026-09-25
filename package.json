@@ -34,7 +34,6 @@
     "@earendil-works/pi-coding-agent": "^0.87.1",
     "@earendil-works/pi-tui": "^0.87.1",
     "@types/node": "^22.0.0",
-    "markdownlint-cli": "^0.49.1",
     "typescript": "^6.0.0"
   },
   "files": [
@@ -50,7 +49,6 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/",
-    "lint:md": "markdownlint --config .markdownlint.json README.md CHANGELOG.md",
     "prepublishOnly": "npm run typecheck && npm test"
   },
   "pi": {

@@ -64,6 +64,9 @@ One command handles previews and sizing:
 /ansicat                      # show the current size
 ```
 
+File previews share the clipboard's 20MB cap, and formats outside
+PNG/BMP/JPEG/WebP/GIF report `format not supported`.
+
 ## Why the vision fallback
 
 A text-only model (most fast/cheap models) receives an image attachment and
