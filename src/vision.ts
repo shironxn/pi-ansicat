@@ -50,6 +50,12 @@ export function modelSupportsImages(ctx: ExtensionContext): boolean {
   return !input || input.length === 0 || input.includes("image");
 }
 
+// Refusal detection and the retry policy live in ./refusal.ts so they can be
+// unit-tested without loading the pi runtime (this module imports pi and reads
+// config files).
+import { resolveDescription } from "./refusal.js";
+export { isRefusal } from "./refusal.js";
+
 export async function describeImage(
   base64: string,
   mimeType: string,
@@ -60,35 +66,39 @@ export async function describeImage(
   const registry = ctx.modelRegistry;
   const model = registry.find(cfg.provider, cfg.model);
   if (!model) throw new Error(`vision model ${cfg.provider}/${cfg.model} not found in pi's registry`);
-  const message = await registry.complete(
-    model,
-    {
-      messages: [
-        {
-          role: "user",
-          timestamp: Date.now(),
-          content: [
-            {
-              type: "text",
-              text: cfg.prompt ?? DEFAULT_DESCRIBE_PROMPT,
-            },
-            { type: "image", data: base64, mimeType },
-          ],
-        } as never,
-      ],
-      ...(cfg.maxTokens !== undefined ? { maxTokens: cfg.maxTokens } : {}),
-    },
-    { signal },
-  );
-  // registry.complete surfaces API failures as result metadata, not rejections:
-  // an aborted/errored call arrives here with (possibly partial) content.
-  // Throw so the caller renders a real failure and never caches partial text.
-  if (message.stopReason === "aborted" || message.stopReason === "error") {
-    throw new Error(message.errorMessage ?? `vision call ${message.stopReason}`);
-  }
-  const text = (message.content ?? [])
-    .flatMap((c) => (c.type === "text" ? [c.text] : []))
-    .join("\n")
-    .trim();
-  return text.length > 0 ? text : undefined;
+
+  const prompt = cfg.prompt ?? DEFAULT_DESCRIBE_PROMPT;
+
+  const run = async (text: string): Promise<string | undefined> => {
+    const message = await registry.complete(
+      model,
+      {
+        messages: [
+          {
+            role: "user",
+            timestamp: Date.now(),
+            content: [
+              { type: "text", text },
+              { type: "image", data: base64, mimeType },
+            ],
+          } as never,
+        ],
+        ...(cfg.maxTokens !== undefined ? { maxTokens: cfg.maxTokens } : {}),
+      },
+      { signal },
+    );
+    // registry.complete surfaces API failures as result metadata, not rejections:
+    // an aborted/errored call arrives here with (possibly partial) content.
+    // Throw so the caller renders a real failure and never caches partial text.
+    if (message.stopReason === "aborted" || message.stopReason === "error") {
+      throw new Error(message.errorMessage ?? `vision call ${message.stopReason}`);
+    }
+    const out = (message.content ?? [])
+      .flatMap((c) => (c.type === "text" ? [c.text] : []))
+      .join("\n")
+      .trim();
+    return out.length > 0 ? out : undefined;
+  };
+
+  return resolveDescription(run, prompt);
 }

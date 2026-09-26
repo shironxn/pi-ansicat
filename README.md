@@ -127,6 +127,34 @@ description length. The `vision`
 block is used only when the active model cannot take images. Without it,
 text-only models get a warning and the image is dropped.
 
+### Choosing the vision model
+
+The description is only as good as the model behind it, and the gap is large.
+Across a small suite (a compiler-error screenshot, a dense terminal log, and an
+invoice — scoring exact-substring OCR fidelity plus whether a blurred,
+unidentifiable image was flagged rather than confidently mislabeled):
+
+| model family | OCR hits | flags a blur | notes |
+|---|---|---|---|
+| `flash models` | — | yes | fast, dependable |
+| `another model` | — | yes | fastest of the reliable set |
+| `another model` | — | mostly | occasionally refuses or over-labels |
+| `another model` | — | partial | weakest OCR in the set |
+
+Two things this showed. **A stronger model is worth it for anything you will
+read text off**: weak models drop punctuation, collapse spacing, and reflow a
+compiler error's alignment — exactly the characters you copy and run. And
+**even good models occasionally answer a vision request with "I am a text-only
+assistant and cannot view images"**; pi-ansicat detects that refusal and retries
+once with an explicit nudge, then reports the image as unavailable rather than
+passing the refusal off as a description. If a describe call fails outright
+(quota, timeout), the prompt says the image is unavailable — it never presents
+the error text as if it described the picture.
+
+If you paste a lot of screenshots and read code or commands off them, point
+`vision` at a strong model. For occasional "what's in this picture" use, any
+capable one is fine.
+
 ## How it works
 
 1. Reads the clipboard with `wl-paste` or `xclip` (auto-detected).

@@ -14,6 +14,14 @@
   title.
 - Pending previews are capped at the 8 most recent; the widget never enters
   the model's context, and a skipped paste leaves no record at all.
+- Vision fallback hardening. The describe prompt now demands exact
+  transcription (models were tidying OCR — dropping punctuation, collapsing
+  spaces, reflowing a compiler error's alignment) and says to flag an
+  unidentifiable subject plainly instead of labeling it anyway. A model that
+  answers "I am a text-only assistant and cannot view images" is detected and
+  retried once with a nudge. And a describe that fails outright (quota,
+  timeout) is now reported as "the image is NOT available", never folded into
+  the description block where the error text could be mistaken for content.
 
 ## 0.3.2
 
