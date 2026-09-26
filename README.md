@@ -58,10 +58,11 @@ three still attach to the message, just without a preview.
 
 ## Use
 
-Paste with `Ctrl+V` (`Alt+V` and `Ctrl+Alt+V` work too). The preview appears
-below your message as a local preview block — a session annotation the model
-never sees; the `[Image #N]` marker in the editor is what actually attaches
-the image on submit. Delete the marker and the image is not sent.
+Paste with `Ctrl+V` (`Alt+V` and `Ctrl+Alt+V` work too). The preview renders
+as a live widget below the editor — it disappears the moment the paste is
+resolved. The `[Image #N]` marker in the editor is what actually attaches the
+image on submit: delete the marker and submit, and the preview vanishes with
+it — nothing is sent, nothing is kept.
 
 One command handles previews and sizing:
 
@@ -123,8 +124,9 @@ text-only models get a warning and the image is dropped.
 
 1. Reads the clipboard with `wl-paste` or `xclip` (auto-detected).
 2. Decodes PNG and BMP with no extra dependencies and renders a half-block
-   truecolor preview (a session-local entry — the preview never enters the
-   model's context). PNG support covers every bit depth (1/2/4/8/16), color
+   truecolor preview as a live editor widget (transient — removed as soon as
+   the paste is resolved, never enters the model's context). PNG support
+   covers every bit depth (1/2/4/8/16), color
    types 0/2/3/4/6 (gray, RGB, palette, gray-alpha, RGBA), and `tRNS`
    transparency; BMP covers 1/4/8-bit palette and 24/32-bit.
 3. Converts JPEG, WebP, and GIF to PNG first, using a system image tool when
@@ -138,8 +140,10 @@ text-only models get a warning and the image is dropped.
 Images processed by the vision fallback are downscaled locally first (through
 pi's own image resizer) and sent only to the provider named in `ansicat.json`
 — that provider is reached through pi, so credentials stay in pi's own auth
-store and never pass through this package. Preview blocks are session-local
-annotations and never enter the model's context. Clipboard reads, decoding,
+store and never pass through this package. The live preview is an editor
+widget: transient, removed when the paste is resolved, never part of the
+model's context. `/ansicat <file>` previews are session-local records, also
+never sent to the model. Clipboard reads, decoding,
 and previews are all local; nothing is logged, cached to disk, or sent
 anywhere else.
 

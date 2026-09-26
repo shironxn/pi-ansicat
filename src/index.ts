@@ -188,6 +188,9 @@ async function buildPreview(bytes: Uint8Array, mimeType: string, label: string):
   } catch (err) { return { art: [], note: `${label}: preview unavailable (${err instanceof Error ? err.message : String(err)})` }; }
 }
 
+const WIDGET_KEY = "pi-ansicat-preview";
+let _previewWidgetActive = false;
+
 function queueImage(queue: ImageQueue, pending: PendingImageEx, ctx: ExtensionContext): ImageMarker {
   const id = randomUUID();
   const placeholder = `[Image #${queue.nextIndex}] `;
@@ -232,7 +235,21 @@ async function doPaste(): Promise<void> {
     const label = "from clipboard";
     const { art, note } = await buildPreview(image.bytes, image.mimeType, label);
     const marker = queueImage(queue, { id: "", base64: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType, art, label }, ctx);
-    pi.appendEntry(PREVIEW_TYPE, { title: `ansicat: ${marker.text.trim()} (${label})`, art, note, label });
+    // Live preview as an editor widget: transient by design — it disappears
+    // when the paste is resolved (submitted or skipped) and leaves no trace.
+    ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => {
+      const container = new Container();
+      container.addChild(new Text(theme.fg("accent", `ansicat: ${marker.text.trim()} (${label})`), 0, 0));
+      if (art.length > 0) {
+        container.addChild(new Spacer(1));
+        for (const line of art) container.addChild(new Text(line, 0, 0));
+      } else {
+        container.addChild(new Spacer(1));
+        container.addChild(new Text(theme.fg("muted", note ?? "[preview unavailable]"), 0, 0));
+      }
+      return container;
+    }, { placement: "belowEditor" });
+    _previewWidgetActive = true;
     if (note && art.length === 0) ctx.ui.notify(note, "info");
   } catch (error) { ctx.ui.notify(`ansicat paste failed: ${error instanceof Error ? error.message : String(error)}`, "warning"); }
   finally { _pasting = false; }
@@ -266,6 +283,8 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
     if (event.source === "extension") return { action: "continue" as const };
     if (!_queue || !_queue.markers.length || !_ctx) return { action: "continue" as const };
     const ctx = _ctx, queue = _queue; // survive session_shutdown during the awaits below
+    // Any submit resolves the live preview — kept or skipped, the widget goes.
+    if (_previewWidgetActive) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
     const attached = queue.markers.filter((m) => event.text.includes(markerKey(m)));
     const imagesToAttach: PendingImageEx[] = [];
     for (const marker of attached) { const pending = queue.images.find((img) => img.id === marker.id); if (pending) imagesToAttach.push(pending); }
@@ -363,6 +382,8 @@ export default function (pi: ExtensionAPI): void {
     _ctx = ctx;
     _queue = createImageQueue();
     _config = loadConfig();
+    // A fresh session must not inherit the previous session's live preview.
+    if (_previewWidgetActive) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
     if (!ctx.hasUI) return;
 
     // Zero-config Ctrl+V: the built-in paste binds the same keys. Ask once to
@@ -402,5 +423,8 @@ export default function (pi: ExtensionAPI): void {
       }
     }
   });
-  pi.on("session_shutdown", () => { _ctx = null; _queue = null; _pasting = false; _describeCache.clear(); });
+  pi.on("session_shutdown", () => {
+    if (_previewWidgetActive) { _ctx?.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
+    _ctx = null; _queue = null; _pasting = false; _describeCache.clear();
+  });
 }

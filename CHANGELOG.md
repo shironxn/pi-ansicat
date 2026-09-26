@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1
+
+- The live preview is now an editor **widget** (`ctx.ui.setWidget`, placed
+  below the editor) instead of a session entry: it disappears the moment the
+  paste is resolved — submit keeps the image, deleting the marker removes the
+  preview with it. Skipped pastes now leave no trace at all: nothing in the
+  transcript, nothing in the model context.
+- `/ansicat <file>` previews remain persistent session entries (an explicit
+  command is a record, still never sent to the model).
+
 ## 0.3.0
 
 - Preview blocks are now session **entries** (`appendEntry` +
