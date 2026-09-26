@@ -32,6 +32,30 @@ export function isRefusal(text: string): boolean {
   return text.length < BARE_REFUSAL_MAX_CHARS && BARE_REFUSAL.test(head);
 }
 
+// Turn one provider reply into the text to hand upstream, or throw for a real
+// failure. Kept pure (no pi, no network) so the whole stop-reason policy is
+// unit-testable. `stopReason` mirrors pi's StopReason; the two that matter
+// here are "error"/"aborted" (no usable reply) and "length" (a real reply that
+// was cut off).
+export function interpretReply(reply: {
+  stopReason: string;
+  errorMessage?: string;
+  text: string;
+}): string | undefined {
+  if (reply.stopReason === "aborted" || reply.stopReason === "error") {
+    throw new Error(reply.errorMessage ?? `vision call ${reply.stopReason}`);
+  }
+  const out = reply.text.trim();
+  if (out.length === 0) return undefined;
+  if (reply.stopReason === "length") {
+    // Keep what the model wrote — the opening is usually the identification,
+    // which is the useful part — but say so, because the tail (often the last
+    // lines of OCR) is missing and an unlabeled truncation reads as complete.
+    return `${out}\n[ansicat: description truncated at the token limit — detail may be missing; raise maxTokens in ansicat.json]`;
+  }
+  return out;
+}
+
 // Run the model once; on a refusal, run once more with the nudge. Kept here,
 // next to the detector, so the retry policy is unit-testable with a stub
 // `run` and no network. `run` returns the model's text, or undefined for an

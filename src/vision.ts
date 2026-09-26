@@ -53,7 +53,7 @@ export function modelSupportsImages(ctx: ExtensionContext): boolean {
 // Refusal detection and the retry policy live in ./refusal.ts so they can be
 // unit-tested without loading the pi runtime (this module imports pi and reads
 // config files).
-import { resolveDescription } from "./refusal.js";
+import { interpretReply, resolveDescription } from "./refusal.js";
 export { isRefusal } from "./refusal.js";
 
 export async function describeImage(
@@ -83,21 +83,24 @@ export async function describeImage(
             ],
           } as never,
         ],
+        // Omitted unless the user set it: pi then falls back to the model's own
+        // maxTokens. Sending a small default would starve reasoning models,
+        // which spend the cap on hidden reasoning before writing anything.
         ...(cfg.maxTokens !== undefined ? { maxTokens: cfg.maxTokens } : {}),
       },
       { signal },
     );
     // registry.complete surfaces API failures as result metadata, not rejections:
     // an aborted/errored call arrives here with (possibly partial) content.
-    // Throw so the caller renders a real failure and never caches partial text.
-    if (message.stopReason === "aborted" || message.stopReason === "error") {
-      throw new Error(message.errorMessage ?? `vision call ${message.stopReason}`);
-    }
-    const out = (message.content ?? [])
-      .flatMap((c) => (c.type === "text" ? [c.text] : []))
-      .join("\n")
-      .trim();
-    return out.length > 0 ? out : undefined;
+    // interpretReply throws for those so the caller renders a real failure and
+    // never caches partial text; it flags a truncated ("length") reply instead.
+    return interpretReply({
+      stopReason: message.stopReason,
+      errorMessage: message.errorMessage,
+      text: (message.content ?? [])
+        .flatMap((c) => (c.type === "text" ? [c.text] : []))
+        .join("\n"),
+    });
   };
 
   return resolveDescription(run, prompt);

@@ -123,33 +123,46 @@ text-only models still get a description:
 `provider` and `model` name any vision-capable model already configured in pi
 (see `pi --list-models`); the values above are only an example. Optional
 `prompt` replaces the built-in describe prompt; `maxTokens` caps the
-description length. The `vision`
-block is used only when the active model cannot take images. Without it,
-text-only models get a warning and the image is dropped.
+description length — leave it out and pi uses the model's own limit. The
+`vision` block is used only when the active model cannot take images. Without
+it, text-only models get a warning and the image is dropped.
 
 ### Choosing the vision model
 
 The description is only as good as the model behind it, and the gap is large.
-Across a small suite (a compiler-error screenshot, a dense terminal log, and an
-invoice — scoring exact-substring OCR fidelity plus whether a blurred,
-unidentifiable image was flagged rather than confidently mislabeled):
+Measured on a small suite — a compiler-error screenshot, a dense terminal log,
+and an invoice — scoring exact-substring OCR fidelity, plus whether a blurred,
+unidentifiable image was flagged rather than confidently mislabeled:
 
-| model family | OCR hits | flags a blur | notes |
-|---|---|---|---|
-| `flash models` | — | yes | fast, dependable |
-| `another model` | — | yes | fastest of the reliable set |
-| `another model` | — | mostly | occasionally refuses or over-labels |
-| `another model` | — | partial | weakest OCR in the set |
+| model | OCR hits | flags a blur |
+|---|---|---|
+| `the fast model` | — | mostly |
+| `the lite model` | — | yes |
+| `the preview model` | — | yes |
+| `the reasoning model` | — | yes |
+| `another model` | — | yes |
+| `another model` | — | mostly |
+| `another model` | — | partial |
 
-Two things this showed. **A stronger model is worth it for anything you will
-read text off**: weak models drop punctuation, collapse spacing, and reflow a
-compiler error's alignment — exactly the characters you copy and run. And
-**even good models occasionally answer a vision request with "I am a text-only
-assistant and cannot view images"**; pi-ansicat detects that refusal and retries
-once with an explicit nudge, then reports the image as unavailable rather than
-passing the refusal off as a description. If a describe call fails outright
-(quota, timeout), the prompt says the image is unavailable — it never presents
-the error text as if it described the picture.
+What this showed:
+
+- **A stronger model is worth it for anything you read text off.** Weak models
+  drop punctuation, collapse spacing, and reflow a compiler error's alignment —
+  exactly the characters you copy and run. `the reasoning model` in particular
+  sometimes narrates colors instead of transcribing text.
+- **A model can answer a vision request with "I am a text-only assistant and
+  cannot view images".** pi-ansicat detects that refusal and retries once with
+  an explicit nudge, then reports the image as unavailable rather than passing
+  the refusal off as a description.
+- **Reasoning models spend the token cap before writing anything.** With a
+  a low token cap, `the reasoning model` burned its whole budget on hidden reasoning and
+  returned an empty string; `the fast model` spent far less on the same image. So
+  do not set `maxTokens` low — or at all, unless you have a reason. Left unset,
+  pi uses the model's own (much larger) limit. If a reply is still cut off at
+  the cap, the description is kept but marked truncated.
+- If a describe call fails outright (quota, timeout), the prompt says the image
+  is unavailable — it never presents the error text as if it described the
+  picture.
 
 If you paste a lot of screenshots and read code or commands off them, point
 `vision` at a strong model. For occasional "what's in this picture" use, any

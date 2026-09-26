@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isRefusal, resolveDescription } from "../src/refusal.ts";
+import { isRefusal, interpretReply, resolveDescription } from "../src/refusal.ts";
 
 // Vision models sometimes answer with a refusal instead of a description.
 // These are the exact phrasings observed from real models on openai.
@@ -77,4 +77,32 @@ test("an empty reply is returned as undefined without a retry", async () => {
   const out = await resolveDescription(run, "PROMPT");
   assert.equal(out, undefined);
   assert.equal(calls, 1);
+});
+
+test("a normal reply passes through unchanged", () => {
+  const out = interpretReply({ stopReason: "stop", text: "  A red square.  " });
+  assert.equal(out, "A red square.");
+});
+
+test("an empty reply is undefined", () => {
+  assert.equal(interpretReply({ stopReason: "stop", text: "   " }), undefined);
+});
+
+// A truncated reply keeps its text (the opening is usually the identification)
+// but carries a marker, because an unlabeled cut reads as a complete answer.
+test("a truncated reply is kept and marked", () => {
+  const out = interpretReply({ stopReason: "length", text: "Rust error dialog. error[E0308]" });
+  assert.ok(out?.startsWith("Rust error dialog."));
+  assert.match(out ?? "", /truncated at the token limit/);
+});
+
+test("an errored reply throws with its message", () => {
+  assert.throws(
+    () => interpretReply({ stopReason: "error", errorMessage: "429 quota reached", text: "" }),
+    /429 quota reached/,
+  );
+});
+
+test("an aborted reply throws", () => {
+  assert.throws(() => interpretReply({ stopReason: "aborted", text: "" }), /aborted/);
 });
