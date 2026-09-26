@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.4
+
+- Docs only. Removed a model-comparison table from the README's vision-model
+  section: it reported one machine's benchmark numbers under provider-specific
+  model names, which told a reader nothing they could act on. The section now
+  keeps the two behavioral notes that matter (refusal retry, do not cap
+  `maxTokens` low) without the personal measurements.
+- README fixes: the intro said the preview renders "under your message" while
+  the rest of the README and the code put it above; and the "No image found"
+  troubleshooting entry conflated an empty clipboard with a missing
+  `wl-clipboard`/`xclip`, which actually surfaces as a distinct paste error.
+- CHANGELOG: corrected the 0.3.2 entry, which claimed metadata tuning that did
+  not happen in that release.
+
 ## 0.3.3
 
 - Previews no longer pile up above the editor. A pending paste renders as a
@@ -27,14 +41,11 @@
   retried once without the cap and the complete reply is kept (or the longer of
   the two if both were cut); only if it is still cut is the description kept
   with a truncation marker. This bites reasoning models, which spend the cap on
-  hidden reasoning before writing anything: with a a low token cap,
-  `the reasoning model` burned its whole budget on reasoning and returned nothing. Best is
-  still to leave `maxTokens` unset — pi then uses the model's own limit.
+  hidden reasoning before writing anything, so leaving `maxTokens` unset — pi
+  then uses the model's own limit — is best.
 - The describe wait is 90s (was 60s). Vision providers occasionally stall on
-  time-to-first-token — long stalls seen on an otherwise fast model, and not
-  specific to one model — and the gateway does not fall through to the next
-  model when the client hangs up, so aborting at 60s turned a slow-but-good
-  description into "image unavailable". Normal replies still land in seconds.
+  time-to-first-token, and aborting early turned a slow-but-good description
+  into "image unavailable". Normal replies still land in seconds.
 - Image support is read the way pi reads it: only an explicit `"image"` in the
   model's `input` counts. pi defaults a model with no declared image support to
   `["text"]`, and the old check treated a missing list as image-capable — which
@@ -48,8 +59,7 @@
 ## 0.3.2
 
 - Docs: demo render refreshed with the current `from clipboard` label
-  (retired `clipboard.png`); description/keywords tuned for npm and the
-  pi.dev gallery.
+  (retired `clipboard.png`).
 
 ## 0.3.1
 

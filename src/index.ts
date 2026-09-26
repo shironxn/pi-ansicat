@@ -15,12 +15,10 @@ import { describeImage, loadVisionConfig, modelSupportsImages } from "./vision.j
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const PREVIEW_TYPE = "pi-ansicat-preview";
-// A vision provider occasionally stalls on time-to-first-token (observed
-// long stalls on an otherwise fast model, gateway-wide, not model-specific). The
-// gateway does not fall through to the next model when the client hangs up,
-// so aborting too early turns a slow-but-good description into "image
-// unavailable". 90s leaves headroom over the observed tail; normal replies
-// still land in a few seconds.
+// A vision provider can stall on time-to-first-token, and a hung call is not
+// failed over — so aborting too early turns a slow-but-good description into
+// "image unavailable". 90s is generous headroom; normal replies still land in
+// a few seconds.
 const DESCRIBE_TIMEOUT_MS = 90_000;
 
 const MIME_BY_EXT: Record<string, string> = {

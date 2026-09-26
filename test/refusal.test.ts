@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { inputSupportsImages, isRefusal, interpretReply, pickReply, resolveDescription } from "../src/refusal.ts";
 
 // Vision models sometimes answer with a refusal instead of a description.
-// These are the exact phrasings observed from real models on openai.
+// These are the exact phrasings observed from real vision models.
 const REFUSALS = [
   "I am a text-only assistant and cannot view images.",
   "I cannot see the image provided.",

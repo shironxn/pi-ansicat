@@ -10,18 +10,16 @@ export interface VisionConfig {
   maxTokens?: number;
 }
 
-// Identification leads, description supports — borrowed from pi-core-vision's
-// task-oriented structure. Without an explicit "name it" instruction, vision
-// models drift into generic visual description ("a man in a suit") and skip
-// recognition entirely, even when they know the answer.
+// Identification leads, description supports. Without an explicit "name it"
+// instruction, vision models drift into generic visual description ("a man in
+// a suit") and skip recognition entirely, even when they know the answer.
 //
-// Two clauses are load-bearing (both measured against a text-only-model
-// transcript use case): the exact-transcription rule, because models otherwise
-// tidy OCR — dropping punctuation, collapsing spaces, reflowing a compiler
-// error's alignment — and the output is often copied and run verbatim; and the
-// "say so plainly" rule, because without it models confidently label an
-// unrecognizable subject ("Smiley face icon" for a blur) instead of flagging
-// doubt.
+// Two clauses are load-bearing for a text-only-model transcript: the
+// exact-transcription rule, because models otherwise tidy OCR — dropping
+// punctuation, collapsing spaces, reflowing a compiler error's alignment — and
+// the output is often copied and run verbatim; and the "say so plainly" rule,
+// because without it models confidently label an unrecognizable subject
+// ("Smiley face icon" for a blur) instead of flagging doubt.
 const DEFAULT_DESCRIBE_PROMPT =
   "Identify this image for a text-only assistant that must act on it. Lead with what it IS: when the " +
   "subject is recognizable — a person, fictional character, anime/manga/game/movie title, landmark, " +
