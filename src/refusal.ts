@@ -51,9 +51,22 @@ export function interpretReply(reply: {
     // Keep what the model wrote — the opening is usually the identification,
     // which is the useful part — but say so, because the tail (often the last
     // lines of OCR) is missing and an unlabeled truncation reads as complete.
-    return `${out}\n[ansicat: description truncated at the token limit — detail may be missing; raise maxTokens in ansicat.json]`;
+    // No advice to "raise maxTokens": by the time this is reached the cap was
+    // either the model's own limit or a retry without it still truncated.
+    return `${out}\n[ansicat: description truncated at the model's output limit — detail may be missing]`;
   }
   return out;
+}
+
+// Choose between a capped reply and a retry at a wider limit. A complete answer
+// beats a truncated one; between two cut off the same way, the longer one
+// carries more OCR. Pure so the policy is unit-testable.
+export function pickReply<T extends { stopReason: string; text: string }>(a: T, b: T): T {
+  const aCut = a.stopReason === "length";
+  const bCut = b.stopReason === "length";
+  if (aCut && !bCut) return b;
+  if (bCut && !aCut) return a;
+  return b.text.trim().length > a.text.trim().length ? b : a;
 }
 
 // Run the model once; on a refusal, run once more with the nudge. Kept here,

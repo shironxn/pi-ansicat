@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isRefusal, interpretReply, resolveDescription } from "../src/refusal.ts";
+import { isRefusal, interpretReply, pickReply, resolveDescription } from "../src/refusal.ts";
 
 // Vision models sometimes answer with a refusal instead of a description.
 // These are the exact phrasings observed from real models on openai.
@@ -93,7 +93,7 @@ test("an empty reply is undefined", () => {
 test("a truncated reply is kept and marked", () => {
   const out = interpretReply({ stopReason: "length", text: "Rust error dialog. error[E0308]" });
   assert.ok(out?.startsWith("Rust error dialog."));
-  assert.match(out ?? "", /truncated at the token limit/);
+  assert.match(out ?? "", /truncated at the model's output limit/);
 });
 
 test("an errored reply throws with its message", () => {
@@ -105,4 +105,35 @@ test("an errored reply throws with its message", () => {
 
 test("an aborted reply throws", () => {
   assert.throws(() => interpretReply({ stopReason: "aborted", text: "" }), /aborted/);
+});
+
+// The self-heal retry (vision.ts): when a user cap cut the reply off, a wider
+// retry is preferred — a complete answer beats a truncated one.
+test("a complete retry beats a truncated first reply", () => {
+  const cut = { stopReason: "length", text: "Rust error. error[E0308]" };
+  const full = { stopReason: "stop", text: "Rust error. error[E0308] mismatched types" };
+  assert.equal(pickReply(cut, full), full);
+  assert.equal(pickReply(full, cut), full);
+});
+
+// Two cut replies: the longer one carries more OCR.
+test("the longer of two truncated replies wins", () => {
+  const a = { stopReason: "length", text: "short" };
+  const b = { stopReason: "length", text: "a much longer truncated reply with more OCR" };
+  assert.equal(pickReply(a, b), b);
+  assert.equal(pickReply(b, a), b);
+});
+
+test("two complete replies: the longer wins", () => {
+  const a = { stopReason: "stop", text: "A red square." };
+  const b = { stopReason: "stop", text: "A red square on a white background, top-left." };
+  assert.equal(pickReply(a, b), b);
+});
+
+// The truncation marker no longer tells the user to raise maxTokens: by the
+// time it is emitted the cap was the model's own, or a wider retry also cut.
+test("the truncation marker does not advise raising maxTokens", () => {
+  const out = interpretReply({ stopReason: "length", text: "Rust error dialog." });
+  assert.match(out ?? "", /truncated at the model's output limit/);
+  assert.doesNotMatch(out ?? "", /raise maxTokens/);
 });

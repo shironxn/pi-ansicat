@@ -22,12 +22,19 @@
   retried once with a nudge. And a describe that fails outright (quota,
   timeout) is now reported as "the image is NOT available", never folded into
   the description block where the error text could be mistaken for content.
-- A reply cut off at the token cap (`stopReason: "length"`) is kept but marked
-  truncated, instead of being passed off as a complete description. This bites
-  reasoning models, which spend the cap on hidden reasoning before writing
-  anything: with a a low token cap, `the reasoning model` burned its whole budget on reasoning
-  and returned nothing. Do not set `maxTokens` low; left unset, pi uses the
-  model's own limit.
+- A reply cut off at the token cap (`stopReason: "length"`) is now handled, not
+  just flagged. If you set `maxTokens` and the reply hits it, the describe is
+  retried once without the cap and the complete reply is kept (or the longer of
+  the two if both were cut); only if it is still cut is the description kept
+  with a truncation marker. This bites reasoning models, which spend the cap on
+  hidden reasoning before writing anything: with a a low token cap,
+  `the reasoning model` burned its whole budget on reasoning and returned nothing. Best is
+  still to leave `maxTokens` unset — pi then uses the model's own limit.
+- The describe wait is 90s (was 60s). Vision providers occasionally stall on
+  time-to-first-token — long stalls seen on an otherwise fast model, and not
+  specific to one model — and the gateway does not fall through to the next
+  model when the client hangs up, so aborting at 60s turned a slow-but-good
+  description into "image unavailable". Normal replies still land in seconds.
 
 ## 0.3.2
 

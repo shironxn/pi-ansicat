@@ -53,8 +53,14 @@ export function modelSupportsImages(ctx: ExtensionContext): boolean {
 // Refusal detection and the retry policy live in ./refusal.ts so they can be
 // unit-tested without loading the pi runtime (this module imports pi and reads
 // config files).
-import { interpretReply, resolveDescription } from "./refusal.js";
+import { interpretReply, pickReply, resolveDescription } from "./refusal.js";
 export { isRefusal } from "./refusal.js";
+
+interface Attempt {
+  stopReason: string;
+  errorMessage?: string;
+  text: string;
+}
 
 export async function describeImage(
   base64: string,
@@ -69,7 +75,7 @@ export async function describeImage(
 
   const prompt = cfg.prompt ?? DEFAULT_DESCRIBE_PROMPT;
 
-  const run = async (text: string): Promise<string | undefined> => {
+  const attempt = async (text: string, maxTokens: number | undefined): Promise<Attempt> => {
     const message = await registry.complete(
       model,
       {
@@ -83,24 +89,38 @@ export async function describeImage(
             ],
           } as never,
         ],
-        // Omitted unless the user set it: pi then falls back to the model's own
-        // maxTokens. Sending a small default would starve reasoning models,
-        // which spend the cap on hidden reasoning before writing anything.
-        ...(cfg.maxTokens !== undefined ? { maxTokens: cfg.maxTokens } : {}),
+        // Omitted unless set: pi then falls back to the model's own maxTokens.
+        // Sending a small default would starve reasoning models, which spend
+        // the cap on hidden reasoning before writing anything.
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
       },
       { signal },
     );
     // registry.complete surfaces API failures as result metadata, not rejections:
     // an aborted/errored call arrives here with (possibly partial) content.
-    // interpretReply throws for those so the caller renders a real failure and
-    // never caches partial text; it flags a truncated ("length") reply instead.
-    return interpretReply({
+    return {
       stopReason: message.stopReason,
       errorMessage: message.errorMessage,
       text: (message.content ?? [])
         .flatMap((c) => (c.type === "text" ? [c.text] : []))
         .join("\n"),
-    });
+    };
+  };
+
+  const run = async (text: string): Promise<string | undefined> => {
+    const first = await attempt(text, cfg.maxTokens);
+    // A maxTokens the user set can be too small for a reasoning model. When the
+    // capped reply is cut off, retry once without the cap — the model's own
+    // limit is the ceiling — and keep whichever reply is complete, or the
+    // longer one if both were cut. With no user cap there is nothing to relax:
+    // the reply is already at the model's limit, so it is only marked.
+    if (first.stopReason === "length" && cfg.maxTokens !== undefined) {
+      const wider = await attempt(text, undefined).catch(() => undefined);
+      if (wider && wider.stopReason !== "error" && wider.stopReason !== "aborted") {
+        return interpretReply(pickReply(first, wider));
+      }
+    }
+    return interpretReply(first);
   };
 
   return resolveDescription(run, prompt);
