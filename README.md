@@ -13,8 +13,9 @@ that cannot see images still knows what you pasted.
 
 ## What it does
 
-- **Paste with `Ctrl+V`.** An `[Image #N]` marker lands in the editor, a
-  half-block preview renders below it, and the image attaches on submit.
+- **Paste with `Ctrl+V`.** An `[Image #N]` marker lands in the editor and a
+  half-block preview appears above it. On submit the preview moves into the
+  chat transcript (above your message) and scrolls with the conversation.
 - **Preview anywhere.** The preview is plain ANSI text, so it survives foot,
   tmux, ssh, and any terminal that shows truecolor. No image protocol needed.
 - **No dependencies for PNG and BMP.** Decoding is built in.
@@ -25,7 +26,7 @@ that cannot see images still knows what you pasted.
 ## Demo
 
 Paste with `Ctrl+V` — the `[Image #N]` marker lands in the editor and a
-truecolor preview renders right below it. This is the real renderer output
+truecolor preview renders above it. This is the real renderer output
 (`renderHalfBlocks`, default 14 lines), drawn as a terminal mock:
 
 ![pi-ansicat: ANSI half-block preview of a clipboard paste](assets/preview.png)
@@ -59,10 +60,16 @@ three still attach to the message, just without a preview.
 ## Use
 
 Paste with `Ctrl+V` (`Alt+V` and `Ctrl+Alt+V` work too). The preview renders
-as a live widget below the editor — it disappears the moment the paste is
-resolved. The `[Image #N]` marker in the editor is what actually attaches the
-image on submit: delete the marker and submit, and the preview vanishes with
-it — nothing is sent, nothing is kept.
+as a live widget above the editor while the paste is pending. The
+`[Image #N]` marker in the editor is what actually attaches the image on
+submit:
+
+- **Delete the marker before submitting** and that preview disappears — the
+  paste is skipped, nothing is sent, nothing is kept.
+- **Submit with the marker in place** and the preview moves into the chat
+  transcript, above your message, where it scrolls with the conversation.
+  `[Image #N]` numbering is per session, so every sent preview keeps a unique
+  title.
 
 One command handles previews and sizing:
 
@@ -124,8 +131,9 @@ text-only models get a warning and the image is dropped.
 
 1. Reads the clipboard with `wl-paste` or `xclip` (auto-detected).
 2. Decodes PNG and BMP with no extra dependencies and renders a half-block
-   truecolor preview as a live editor widget (transient — removed as soon as
-   the paste is resolved, never enters the model's context). PNG support
+   truecolor preview: a transient widget above the editor while pending, then
+   a session record in the chat transcript once submitted. Neither form ever
+   enters the model's context. PNG support
    covers every bit depth (1/2/4/8/16), color
    types 0/2/3/4/6 (gray, RGB, palette, gray-alpha, RGBA), and `tRNS`
    transparency; BMP covers 1/4/8-bit palette and 24/32-bit.
@@ -140,12 +148,13 @@ text-only models get a warning and the image is dropped.
 Images processed by the vision fallback are downscaled locally first (through
 pi's own image resizer) and sent only to the provider named in `ansicat.json`
 — that provider is reached through pi, so credentials stay in pi's own auth
-store and never pass through this package. The live preview is an editor
-widget: transient, removed when the paste is resolved, never part of the
-model's context. `/ansicat <file>` previews are session-local records, also
-never sent to the model. Clipboard reads, decoding,
-and previews are all local; nothing is logged, cached to disk, or sent
-anywhere else.
+store and never pass through this package. Previews are session-local
+records: a transient editor widget while pending, then a chat-transcript
+entry after submit — neither is ever part of the model's context, and a
+skipped paste leaves no record at all. `/ansicat <file>` previews are
+session-local records too, also never sent to the model. Clipboard reads,
+decoding, and previews are all local; nothing is logged, cached to disk, or
+sent anywhere else.
 
 ## Troubleshooting
 

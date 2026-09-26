@@ -2,18 +2,18 @@
 
 ## 0.3.3
 
-- The live preview now tracks the editor in real time: it renders every
-  queued paste (multi-paste shows all of them, stacked), drops a paste's
-  preview the moment its marker is deleted from the editor, and clears
-  entirely when none remain.
-- Previews **persist after submit**: sending a message marks its previews as
-  sent instead of clearing them. Only deleting a paste's marker before
-  submit (skipping it) removes the preview — exactly matching intent.
-- `[Image #N]` numbering is session-wide now: it keeps incrementing across
+- Previews no longer pile up above the editor. A pending paste renders as a
+  widget above the editor (multi-paste shows all of them, stacked); on submit
+  it moves into the chat transcript, above your message, and scrolls with the
+  conversation.
+- A pending preview tracks the editor in real time: deleting its `[Image #N]`
+  marker drops that preview immediately (the paste is skipped). Deleting the
+  last marker clears the widget.
+- `[Image #N]` numbering is session-wide: it keeps incrementing across
   submits instead of restarting at 1, so every sent preview has a unique
   title.
-- Widget placed above the editor (matching the old preview position); capped
-  at the 8 most recent items (oldest sent previews drop off first).
+- Pending previews are capped at the 8 most recent; the widget never enters
+  the model's context, and a skipped paste leaves no record at all.
 
 ## 0.3.2
 
