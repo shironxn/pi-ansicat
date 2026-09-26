@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+- Preview blocks are now session **entries** (`appendEntry` +
+  `registerEntryRenderer`) instead of custom messages. They render exactly
+  as before, but pi serializes custom messages into the LLM context as user
+  messages — every paste was injecting a permanent `ansicat: [Image #1] …`
+  line into the conversation, which is what made a deleted paste look "still
+  there" and fed models misleading filenames. Entries never reach the model:
+  deleting the marker now removes all trace of a skipped paste.
+- Bumped to 0.3.0 to mark the context-behavior change.
+
 ## 0.2.9
 
 From a second differential audit pass over 0.2.8 (all findings verified

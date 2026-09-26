@@ -232,21 +232,25 @@ async function doPaste(): Promise<void> {
     const label = "from clipboard";
     const { art, note } = await buildPreview(image.bytes, image.mimeType, label);
     const marker = queueImage(queue, { id: "", base64: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType, art, label }, ctx);
-    pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${marker.text.trim()} (${label})`, display: true, details: { art, note, label, marker: marker.text.trim() } }, { triggerTurn: false });
+    pi.appendEntry(PREVIEW_TYPE, { title: `ansicat: ${marker.text.trim()} (${label})`, art, note, label });
     if (note && art.length === 0) ctx.ui.notify(note, "info");
   } catch (error) { ctx.ui.notify(`ansicat paste failed: ${error instanceof Error ? error.message : String(error)}`, "warning"); }
   finally { _pasting = false; }
 }
 
-interface PreviewDetails { art?: string[]; note?: string; label?: string; marker?: string; }
+interface PreviewDetails { title?: string; art?: string[]; note?: string; label?: string; }
 
 export function registerAnsiCat(pi: ExtensionAPI): void {
   _pi = pi;
-  pi.registerMessageRenderer<PreviewDetails>(PREVIEW_TYPE, (message, _options, theme) => {
+  // Session ENTRY, not a message: entries render in the TUI but never enter
+  // the LLM context. Custom messages are serialized as user messages
+  // (dist/core/messages.js "case custom") — every paste would otherwise
+  // inject a permanent line into the conversation.
+  pi.registerEntryRenderer<PreviewDetails>(PREVIEW_TYPE, (entry, _options, theme) => {
     try {
-      const details = (message?.details ?? {}) as PreviewDetails;
+      const details = (entry.data ?? {}) as PreviewDetails;
       const container = new Container();
-      const title = typeof message?.content === "string" && message.content.length > 0 ? message.content : "ansicat preview";
+      const title = typeof details.title === "string" && details.title.length > 0 ? details.title : "ansicat preview";
       container.addChild(new Text(theme.fg("accent", title), 0, 0));
       if (details.art && details.art.length > 0) {
         container.addChild(new Spacer(1));
@@ -343,11 +347,11 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
         const mime = MIME_BY_EXT[ext] ?? sniffImageMime(bytes);
         if (!mime) {
           const note = `${name}: preview unavailable (${ext ? `.${ext.slice(1)} ` : ""}format not supported — png/bmp native, jpeg/webp/gif via converter)`;
-          pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${name}`, display: true, details: { art: [], note, label: name } }, { triggerTurn: false });
+          pi.appendEntry(PREVIEW_TYPE, { title: `ansicat: ${name}`, art: [], note, label: name });
           return;
         }
         const { art, note } = await buildPreview(bytes, mime, name);
-        pi.sendMessage({ customType: PREVIEW_TYPE, content: `ansicat: ${name}`, display: true, details: { art, note, label: name } }, { triggerTurn: false });
+        pi.appendEntry(PREVIEW_TYPE, { title: `ansicat: ${name}`, art, note, label: name });
       } catch (err) { ctx.ui.notify(`ansicat: ${tuiSafe(err instanceof Error ? err.message : String(err))}`, "error"); }
     },
   });

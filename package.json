@@ -1,6 +1,6 @@
 {
   "name": "pi-ansicat",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "description": "Paste clipboard images into the pi coding agent with a truecolor ANSI preview and a vision fallback for text-only models",
   "keywords": [
     "pi-package",
