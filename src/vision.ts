@@ -14,13 +14,24 @@ export interface VisionConfig {
 // task-oriented structure. Without an explicit "name it" instruction, vision
 // models drift into generic visual description ("a man in a suit") and skip
 // recognition entirely, even when they know the answer.
+//
+// Two clauses are load-bearing (both measured against a text-only-model
+// transcript use case): the exact-transcription rule, because models otherwise
+// tidy OCR — dropping punctuation, collapsing spaces, reflowing a compiler
+// error's alignment — and the output is often copied and run verbatim; and the
+// "say so plainly" rule, because without it models confidently label an
+// unrecognizable subject ("Smiley face icon" for a blur) instead of flagging
+// doubt.
 const DEFAULT_DESCRIBE_PROMPT =
   "Identify this image for a text-only assistant that must act on it. Lead with what it IS: when the " +
   "subject is recognizable — a person, fictional character, anime/manga/game/movie title, landmark, " +
   "product, brand, logo, meme, or artwork — name it (title, series, or character name) instead of " +
-  "describing around it. Then compact but complete: image type (photo, screenshot, diagram, chart, UI); " +
-  "ALL visible text verbatim (OCR); layout, colors, and any detail that changes meaning if omitted. " +
-  "If unsure of an identification, give your best guess with a confidence note. Plain text, no preamble.";
+  "describing around it; if it is not clearly identifiable, say so plainly rather than inventing a label. " +
+  "Then compact but complete: image type (photo, screenshot, diagram, chart, UI); transcribe ALL visible " +
+  "text EXACTLY as it appears — preserve punctuation, spacing, capitalisation, and line breaks; never " +
+  "tidy, reflow, translate, or correct it, because it may be copied and run verbatim (code, errors, paths, " +
+  "commands, URLs); layout, colors, and any detail that changes meaning if omitted. If unsure of an " +
+  "identification or a value, give your best guess with a confidence note. Plain text, no preamble.";
 
 export function loadVisionConfig(): VisionConfig | undefined {
   // Standalone: the vision model is configured only in ansicat.json's `vision`
