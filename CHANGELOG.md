@@ -1,16 +1,36 @@
 # Changelog
 
+## 0.3.5
+
+- README privacy section: the closing line claimed previews were "never
+  logged, cached to disk". That was wrong — a submitted preview is a normal
+  chat-transcript entry, so its text and ANSI art do land in pi's session
+  file. The section now says so, and scopes the guarantee to what actually
+  holds: the image bytes are never written, and the entry never enters the
+  model's context.
+- README troubleshooting: the "No image found" / "ansicat paste failed" split
+  from 0.3.4 attributed the errors backwards. An empty clipboard on Wayland or
+  X11 hits the same `listTypes()` path as a missing clipboard tool, so it also
+  surfaces as "ansicat paste failed"; "No image found" only appears when the
+  clipboard holds non-image content or an empty image payload. The entries now
+  describe each error by what actually raises it.
+- CHANGELOG: corrected the 0.3.4 entry — it was labelled "Docs only" although
+  it also rewrote comments in `src/index.ts`, `src/vision.ts`, and
+  `test/refusal.test.ts`, and its troubleshooting note repeated the wrong
+  attribution fixed above.
+
 ## 0.3.4
 
-- Docs only. Removed a model-comparison table from the README's vision-model
-  section: it reported one machine's benchmark numbers under provider-specific
-  model names, which told a reader nothing they could act on. The section now
-  keeps the two behavioral notes that matter (refusal retry, do not cap
-  `maxTokens` low) without the personal measurements.
-- README fixes: the intro said the preview renders "under your message" while
-  the rest of the README and the code put it above; and the "No image found"
-  troubleshooting entry conflated an empty clipboard with a missing
-  `wl-clipboard`/`xclip`, which actually surfaces as a distinct paste error.
+- Removed a model-comparison table from the README's vision-model section: it
+  reported one machine's benchmark numbers under provider-specific model
+  names, which told a reader nothing they could act on. The section now keeps
+  the two behavioral notes that matter (refusal retry, do not cap `maxTokens`
+  low) without the personal measurements.
+- README: the intro said the preview renders "under your message" while the
+  rest of the README and the code put it above.
+- Comment cleanups in `src/index.ts`, `src/vision.ts`, and
+  `test/refusal.test.ts`: dropped provider- and gateway-specific references so
+  the shipped source reads as a standalone package.
 - CHANGELOG: corrected the 0.3.2 entry, which claimed metadata tuning that did
   not happen in that release.
 

@@ -174,22 +174,28 @@ pi's own image resizer) and sent only to the provider named in `ansicat.json`
 — that provider is reached through pi, so credentials stay in pi's own auth
 store and never pass through this package. Previews are session-local
 records: a transient editor widget while pending, then a chat-transcript
-entry after submit — neither is ever part of the model's context, and a
-skipped paste leaves no record at all. `/ansicat <file>` previews are
-session-local records too, also never sent to the model. Clipboard reads,
-decoding, and previews are all local; nothing is logged, cached to disk, or
-sent anywhere else.
+entry after submit. That entry is written to pi's own session file, like any
+other transcript entry, so the preview's text and ANSI art persist on disk —
+but the image bytes are not written anywhere, and the entry never joins the
+model's context. A skipped paste leaves no record at all. `/ansicat <file>`
+previews are session-local records too, also never sent to the model.
+Clipboard reads, decoding, and previews all happen locally; nothing is sent
+anywhere except the image you explicitly describe.
 
 ## Troubleshooting
 
 - **Nothing happens on `Ctrl+V`.** Another program owns the key, or pi's
   built-in paste is still bound. Check the keybindings step in Install, then
   `/reload`.
-- **"No image found in clipboard."** The clipboard has no image. Confirm with
-  `wl-paste --list-types` or `xclip -selection clipboard -t TARGETS -o`.
-- **"ansicat paste failed: …"** The clipboard tool is missing or no display is
-  reachable — install `wl-clipboard` (Wayland) or `xclip` (X11), and check
-  `WAYLAND_DISPLAY`/`DISPLAY`.
+- **"No image found in clipboard."** The clipboard holds content, but nothing
+  image-shaped — you copied text, say. Copy an image and retry.
+- **"ansicat paste failed: …"** The read itself failed; the message names why.
+  `wl-paste not found or no image in clipboard` / `xclip not found or no image
+  in clipboard` means the clipboard tool is missing **or** that session's
+  clipboard is empty — install `wl-clipboard` (Wayland) or `xclip` (X11) and
+  make sure an image is copied. `no Wayland/X11 clipboard available` means
+  neither `WAYLAND_DISPLAY` nor `DISPLAY` is set. `clipboard image format not
+  supported (…)` means the image is in a format pi-ansicat cannot read.
 - **Preview is blank or missing.** The format has no converter installed. See
   Requirements. The image still attaches.
 - **"text-only model and no vision config."** Add a `vision` block to
