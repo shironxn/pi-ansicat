@@ -35,6 +35,15 @@
   specific to one model — and the gateway does not fall through to the next
   model when the client hangs up, so aborting at 60s turned a slow-but-good
   description into "image unavailable". Normal replies still land in seconds.
+- Image support is read the way pi reads it: only an explicit `"image"` in the
+  model's `input` counts. pi defaults a model with no declared image support to
+  `["text"]`, and the old check treated a missing list as image-capable — which
+  would have sent raw image blocks to a text-only model, the exact case this
+  fallback exists to prevent.
+- Images already attached to the prompt (an RPC client, or `pi @image.png`) are
+  no longer dropped. The input handler used to return only its own images; it
+  now appends to the caller's, and on the text-only path passes those through
+  untouched — it never described them, so it must not discard them.
 
 ## 0.3.2
 

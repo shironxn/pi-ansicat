@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isRefusal, interpretReply, pickReply, resolveDescription } from "../src/refusal.ts";
+import { inputSupportsImages, isRefusal, interpretReply, pickReply, resolveDescription } from "../src/refusal.ts";
 
 // Vision models sometimes answer with a refusal instead of a description.
 // These are the exact phrasings observed from real models on openai.
@@ -105,6 +105,17 @@ test("an errored reply throws with its message", () => {
 
 test("an aborted reply throws", () => {
   assert.throws(() => interpretReply({ stopReason: "aborted", text: "" }), /aborted/);
+});
+
+// pi defaults `input` to ["text"], so only an explicit "image" entry means the
+// model can take images. A missing list must read as text-only: the old
+// `!input || length === 0` default sent raw images to text-only models.
+test("only an explicit image entry means the model takes images", () => {
+  assert.equal(inputSupportsImages(["text", "image"]), true);
+  assert.equal(inputSupportsImages(["image"]), true);
+  assert.equal(inputSupportsImages(["text"]), false);
+  assert.equal(inputSupportsImages([]), false);
+  assert.equal(inputSupportsImages(undefined), false);
 });
 
 // The self-heal retry (vision.ts): when a user cap cut the reply off, a wider

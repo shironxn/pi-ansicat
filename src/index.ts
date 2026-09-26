@@ -379,10 +379,12 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
         }
       } else { ctx.ui.notify("ansicat: text-only model and no vision config — image dropped (add a vision block to ansicat.json to describe it)", "warning"); }
       // The description replaces the image: providers reject image blocks for
-      // text-only models, and re-sending raw bytes defeats the fallback.
-      return { action: "transform" as const, text, images: [] };
+      // text-only models, and re-sending raw bytes defeats the fallback. Only
+      // OUR images are stripped — images the caller already attached (RPC, or
+      // CLI `@image.png`) pass through, since we never described them.
+      return { action: "transform" as const, text, images: event.images ?? [] };
     }
-    return { action: "transform" as const, text, images: imagesToAttach.map((img) => ({ type: "image" as const, data: img.base64, mimeType: img.mimeType })) };
+    return { action: "transform" as const, text, images: [...(event.images ?? []), ...imagesToAttach.map((img) => ({ type: "image" as const, data: img.base64, mimeType: img.mimeType }))] };
   });
 
   pi.registerCommand("ansicat", {

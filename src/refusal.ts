@@ -32,6 +32,15 @@ export function isRefusal(text: string): boolean {
   return text.length < BARE_REFUSAL_MAX_CHARS && BARE_REFUSAL.test(head);
 }
 
+// Whether a pi model accepts image input. pi fills `input` with ["text"] when
+// a provider declares no image support (provider-composer.js), and its own
+// image paths gate on `input.includes("image")` (read.js). So a missing or
+// empty list must read as text-only — the opposite default here would push raw
+// image blocks at a text-only model, which is what the vision fallback is for.
+export function inputSupportsImages(input: readonly string[] | undefined): boolean {
+  return Array.isArray(input) && input.includes("image");
+}
+
 // Turn one provider reply into the text to hand upstream, or throw for a real
 // failure. Kept pure (no pi, no network) so the whole stop-reason policy is
 // unit-testable. `stopReason` mirrors pi's StopReason; the two that matter

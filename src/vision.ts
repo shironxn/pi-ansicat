@@ -45,15 +45,19 @@ export function loadVisionConfig(): VisionConfig | undefined {
   return undefined;
 }
 
+// pi defaults a model's `input` to ["text"] when a provider does not declare
+// image support (provider-composer.js). Treating a missing list as "can take
+// images" would send raw image blocks to a text-only model — the exact case
+// this fallback exists to avoid. Only an explicit "image" entry counts. The
+// predicate is pure and lives in refusal.ts so it is unit-testable.
 export function modelSupportsImages(ctx: ExtensionContext): boolean {
-  const input = (ctx.model as { input?: string[] } | undefined)?.input;
-  return !input || input.length === 0 || input.includes("image");
+  return inputSupportsImages((ctx.model as { input?: string[] } | undefined)?.input);
 }
 
 // Refusal detection and the retry policy live in ./refusal.ts so they can be
 // unit-tested without loading the pi runtime (this module imports pi and reads
 // config files).
-import { interpretReply, pickReply, resolveDescription } from "./refusal.js";
+import { inputSupportsImages, interpretReply, pickReply, resolveDescription } from "./refusal.js";
 export { isRefusal } from "./refusal.js";
 
 interface Attempt {
