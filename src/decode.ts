@@ -72,6 +72,9 @@ function unfilter(raw: Uint8Array, height: number, rowBytes: number, bpp: number
   let p = 0;
   for (let y = 0; y < height; y++) {
     const filter = raw[p++]!;
+    // Anything above 4 is a malformed stream; the fall-through would decode
+    // it as Paeth and produce silently wrong pixels.
+    if (filter > 4) throw new Error(`PNG invalid filter type ${filter}`);
     const base = y * rowBytes;
     const prevBase = (y - 1) * rowBytes;
     for (let i = 0; i < rowBytes; i++) {

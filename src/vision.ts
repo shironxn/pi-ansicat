@@ -48,7 +48,7 @@ export async function describeImage(
 ): Promise<string | undefined> {
   const registry = ctx.modelRegistry;
   const model = registry.find(cfg.provider, cfg.model);
-  if (!model) return undefined;
+  if (!model) throw new Error(`vision model ${cfg.provider}/${cfg.model} not found in pi's registry`);
   const message = await registry.complete(
     model,
     {
@@ -69,6 +69,12 @@ export async function describeImage(
     },
     { signal },
   );
+  // registry.complete surfaces API failures as result metadata, not rejections:
+  // an aborted/errored call arrives here with (possibly partial) content.
+  // Throw so the caller renders a real failure and never caches partial text.
+  if (message.stopReason === "aborted" || message.stopReason === "error") {
+    throw new Error(message.errorMessage ?? `vision call ${message.stopReason}`);
+  }
   const text = (message.content ?? [])
     .flatMap((c) => (c.type === "text" ? [c.text] : []))
     .join("\n")

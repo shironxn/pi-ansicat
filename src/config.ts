@@ -3,7 +3,11 @@
 // agent dir.
 export function agentDir(): string {
   const env = process.env.PI_CODING_AGENT_DIR;
-  if (env && env.length > 0) return env;
+  if (env && env.length > 0) {
+    // pi expands a leading ~ in PI_CODING_AGENT_DIR itself (dist/utils/paths.js) —
+    // match it, or config/binding paths silently diverge from pi's.
+    return env.replace(/^~(?=\/|$)/, process.env.HOME ?? "");
+  }
   return `${process.env.HOME ?? ""}/.pi/agent`;
 }
 

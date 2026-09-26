@@ -56,14 +56,20 @@ export async function readClipboardImage(): Promise<ClipboardImage | null> {
   }
   const types = await listTypes();
   if (types.length === 0) {
-    throw new Error(
-      isWayland()
-        ? "wl-paste not found or no image in clipboard (need package wl-clipboard)"
-        : "xclip not found or no image in clipboard (need package xclip)",
-    );
+    if (isWayland()) {
+      throw new Error("wl-paste not found or no image in clipboard (need package wl-clipboard)");
+    }
+    if (process.env.DISPLAY) {
+      throw new Error("xclip not found or no image in clipboard (need package xclip)");
+    }
+    throw new Error("no Wayland/X11 clipboard available (set WAYLAND_DISPLAY or DISPLAY, and install wl-clipboard or xclip)");
   }
   const mime = MIME_PRIORITY.find((m) => types.includes(m));
-  if (!mime) return null;
+  if (!mime) {
+    const images = types.filter((t) => t.startsWith("image/"));
+    if (images.length > 0) throw new Error(`clipboard image format not supported (${images.join(", ")})`);
+    return null;
+  }
 
   const { stdout } =
     isWayland()

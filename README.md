@@ -51,7 +51,8 @@ yes once, or edit it yourself:
 Linux only. Wayland needs `wl-clipboard`, X11 needs `xclip`.
 
 Preview works out of the box for PNG (any bit depth or color type, including
-palette) and BMP. JPEG, WebP, and GIF are previewed when one of ImageMagick
+palette — interlaced/Adam7 PNGs are the exception: they attach but don't
+preview) and BMP. JPEG, WebP, and GIF are previewed when one of ImageMagick
 (`magick` or `convert`) or `ffmpeg` is installed. Without a converter, those
 three still attach to the message, just without a preview.
 
@@ -98,6 +99,8 @@ Both keys are optional, defaults shown:
 }
 ```
 
+Values clamp to those ranges (`cols` 20–120, `maxLines` 4–40).
+
 The vision fallback needs to know which model to use. Add a `vision` block so
 text-only models still get a description:
 
@@ -131,10 +134,12 @@ text-only models get a warning and the image is dropped.
 
 ## Privacy
 
-Images processed by the vision fallback go only to the provider you configure
-in `ansicat.json` — nothing else leaves your machine. Clipboard reads,
-decoding, and previews are all local; nothing is logged, cached to disk, or
-sent anywhere else.
+Images processed by the vision fallback are downscaled locally first (through
+pi's own image resizer) and sent only to the provider named in `ansicat.json`
+— that provider is reached through pi, so credentials stay in pi's own auth
+store and never pass through this package. Clipboard reads, decoding, and
+previews are all local; nothing is logged, cached to disk, or sent anywhere
+else.
 
 ## Troubleshooting
 

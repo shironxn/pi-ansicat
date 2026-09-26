@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.2.9
+
+From a second differential audit pass over 0.2.8 (all findings verified
+against pi's installed source before fixing):
+
+- `writeBindings` no longer clobbers keybindings.json when the file changed
+  while the confirm dialog sat open — statuses it cannot handle are skipped
+  untouched instead of rewritten with a single key.
+- Vision describe failures now surface as real failures: `registry.complete`
+  reports API errors/aborts as result metadata (never rejections), so a 60s
+  timeout or provider error previously surfaced as "(no description
+  returned)" and partial text could get cached. Also, a mistyped
+  provider/model in the config now reports the resolution failure by name.
+- `PI_CODING_AGENT_DIR` with a leading `~` expands the same way pi expands
+  it — previously config/binding paths diverged from pi's and a literal `~`
+  directory could be created.
+- `/ansicat <file>` resolves format by extension first, magic-byte sniff
+  second: `.jfif`, `.jpe`, and extensionless images now preview correctly
+  instead of failing as "not a PNG", and genuinely unknown formats report
+  "format not supported".
+- Clipboard errors distinguish "format not supported" (lists the MIME) from
+  "no image", and headless sessions (no Wayland/X11) get an accurate message.
+- PNG filter bytes above 4 are rejected instead of decoding as Paeth
+  (silently wrong pixels).
+- The no-vision-config warning says the image is dropped (it always was,
+  post-0.2.8) instead of "may fail to send"; the evidence label says "the
+  image(s) you pasted" (they are not attached in that path).
+- `tuiSafe` also strips C1 controls and unicode format characters (bidi
+  overrides) from TUI-rendered names and error paths; the declined-prompt
+  write no longer rewrites clamped `cols`/`maxLines` back into the user's
+  config.
+- Tests: 21 → 26 (inflate cap, interlace, missing PLTE, filtered scanlines
+  Sub/Up, invalid filter byte).
+
 ## 0.2.8
 
 Hardening and latency, from a three-agent audit (code, docs, security):
