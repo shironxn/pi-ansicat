@@ -164,6 +164,47 @@ function markerKey(marker: ImageMarker): string { return marker.text.trim(); }
 // overrides — strip them before anything lands in rendered TUI output.
 const tuiSafe = (s: string): string => s.replace(/[\x00-\x1f\x7f-\x9f\p{Cf}]/gu, "");
 
+// Rebuild the live-preview widget from the queued images whose markers are
+// still present in the editor. Keyed: setWidget is only re-called when the
+// visible set actually changes.
+function renderPreviewWidget(ctx: ExtensionContext, items: { img: PendingImageEx; marker: ImageMarker }[], key: string): void {
+  ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => {
+    const container = new Container();
+    for (const { img, marker } of items) {
+      container.addChild(new Text(theme.fg("accent", `ansicat: ${marker.text.trim()} (${img.label})`), 0, 0));
+      container.addChild(new Spacer(1));
+      if (img.art.length > 0) for (const line of img.art) container.addChild(new Text(line, 0, 0));
+      else container.addChild(new Text(theme.fg("muted", "preview unavailable"), 0, 0));
+      container.addChild(new Spacer(1));
+    }
+    return container;
+  }, { placement: "aboveEditor" });
+  _previewWidgetActive = true;
+  _lastPreviewKey = key;
+}
+
+// Keep the live preview in sync with the editor: a paste whose marker text
+// has been deleted drops out of the widget immediately; an empty visible set
+// clears the widget entirely. Called on a zero timer after terminal input so
+// the editor applies the keystroke first.
+function syncPreviewWidget(): void {
+  if (!_previewWidgetActive || !_ctx || !_queue) return;
+  const ctx = _ctx, queue = _queue;
+  const editor = ctx.ui.getEditorText();
+  const items = queue.images
+    .map((img) => ({ img, marker: queue.markers.find((m) => m.id === img.id) }))
+    .filter((it): it is { img: PendingImageEx; marker: ImageMarker } => !!it.marker && editor.includes(it.marker.text.trim()));
+  const key = items.map((it) => it.marker.id).join(",");
+  if (key === _lastPreviewKey) return;
+  if (items.length === 0) {
+    ctx.ui.setWidget(WIDGET_KEY, undefined);
+    _previewWidgetActive = false;
+    _lastPreviewKey = "";
+    return;
+  }
+  renderPreviewWidget(ctx, items, key);
+}
+
 async function buildPreview(bytes: Uint8Array, mimeType: string, label: string): Promise<{ art: string[]; note?: string }> {
   try {
     let source = bytes;
@@ -190,6 +231,8 @@ async function buildPreview(bytes: Uint8Array, mimeType: string, label: string):
 
 const WIDGET_KEY = "pi-ansicat-preview";
 let _previewWidgetActive = false;
+let _lastPreviewKey = "";
+let _unsubTerminalInput: (() => void) | null = null;
 
 function queueImage(queue: ImageQueue, pending: PendingImageEx, ctx: ExtensionContext): ImageMarker {
   const id = randomUUID();
@@ -235,21 +278,9 @@ async function doPaste(): Promise<void> {
     const label = "from clipboard";
     const { art, note } = await buildPreview(image.bytes, image.mimeType, label);
     const marker = queueImage(queue, { id: "", base64: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType, art, label }, ctx);
-    // Live preview as an editor widget: transient by design — it disappears
-    // when the paste is resolved (submitted or skipped) and leaves no trace.
-    ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => {
-      const container = new Container();
-      container.addChild(new Text(theme.fg("accent", `ansicat: ${marker.text.trim()} (${label})`), 0, 0));
-      if (art.length > 0) {
-        container.addChild(new Spacer(1));
-        for (const line of art) container.addChild(new Text(line, 0, 0));
-      } else {
-        container.addChild(new Spacer(1));
-        container.addChild(new Text(theme.fg("muted", note ?? "[preview unavailable]"), 0, 0));
-      }
-      return container;
-    }, { placement: "belowEditor" });
-    _previewWidgetActive = true;
+    // Zero timer: render after pasteToEditor has applied the marker text, so
+    // the sync pass sees the full editor state (including earlier markers).
+    setTimeout(() => syncPreviewWidget(), 0);
     if (note && art.length === 0) ctx.ui.notify(note, "info");
   } catch (error) { ctx.ui.notify(`ansicat paste failed: ${error instanceof Error ? error.message : String(error)}`, "warning"); }
   finally { _pasting = false; }
@@ -283,8 +314,9 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
     if (event.source === "extension") return { action: "continue" as const };
     if (!_queue || !_queue.markers.length || !_ctx) return { action: "continue" as const };
     const ctx = _ctx, queue = _queue; // survive session_shutdown during the awaits below
-    // Any submit resolves the live preview — kept or skipped, the widget goes.
-    if (_previewWidgetActive) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
+    // Submit resolves the live preview unconditionally: kept pastes attach,
+    // skipped pastes vanish — the widget goes either way.
+    if (_previewWidgetActive) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; _lastPreviewKey = ""; }
     const attached = queue.markers.filter((m) => event.text.includes(markerKey(m)));
     const imagesToAttach: PendingImageEx[] = [];
     for (const marker of attached) { const pending = queue.images.find((img) => img.id === marker.id); if (pending) imagesToAttach.push(pending); }
@@ -382,8 +414,17 @@ export default function (pi: ExtensionAPI): void {
     _ctx = ctx;
     _queue = createImageQueue();
     _config = loadConfig();
-    // A fresh session must not inherit the previous session's live preview.
+    // A fresh session must not inherit the previous session's live preview,
+    // and the terminal-input sync is re-registered for the new session.
     if (_previewWidgetActive) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
+    _lastPreviewKey = "";
+    if (_unsubTerminalInput) { _unsubTerminalInput(); _unsubTerminalInput = null; }
+    if (ctx.hasUI) {
+      _unsubTerminalInput = ctx.ui.onTerminalInput(() => {
+        if (!_previewWidgetActive) return;
+        setTimeout(() => syncPreviewWidget(), 0);
+      });
+    }
     if (!ctx.hasUI) return;
 
     // Zero-config Ctrl+V: the built-in paste binds the same keys. Ask once to
@@ -425,6 +466,8 @@ export default function (pi: ExtensionAPI): void {
   });
   pi.on("session_shutdown", () => {
     if (_previewWidgetActive) { _ctx?.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
+    _lastPreviewKey = "";
+    if (_unsubTerminalInput) { _unsubTerminalInput(); _unsubTerminalInput = null; }
     _ctx = null; _queue = null; _pasting = false; _describeCache.clear();
   });
 }
