@@ -278,8 +278,10 @@ async function doPaste(): Promise<void> {
     const label = "from clipboard";
     const { art, note } = await buildPreview(image.bytes, image.mimeType, label);
     const marker = queueImage(queue, { id: "", base64: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType, art, label }, ctx);
-    // Zero timer: render after pasteToEditor has applied the marker text, so
-    // the sync pass sees the full editor state (including earlier markers).
+    // Mark the pipeline pending BEFORE the timer runs: syncPreviewWidget's
+    // guard requires an active preview, and on a fresh paste nothing has set
+    // it yet. Zero timer so pasteToEditor's marker text is already applied.
+    _previewWidgetActive = true;
     setTimeout(() => syncPreviewWidget(), 0);
     if (note && art.length === 0) ctx.ui.notify(note, "info");
   } catch (error) { ctx.ui.notify(`ansicat paste failed: ${error instanceof Error ? error.message : String(error)}`, "warning"); }
