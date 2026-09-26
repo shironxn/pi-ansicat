@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.3
+
+- The live preview now tracks the editor in real time: it renders every
+  queued paste (multi-paste shows all of them, stacked), drops a paste's
+  preview the moment its marker is deleted from the editor, and clears
+  entirely when none remain.
+- Previews **persist after submit**: sending a message marks its previews as
+  sent instead of clearing them. Only deleting a paste's marker before
+  submit (skipping it) removes the preview — exactly matching intent.
+- `[Image #N]` numbering is session-wide now: it keeps incrementing across
+  submits instead of restarting at 1, so every sent preview has a unique
+  title.
+- Widget placed above the editor (matching the old preview position); capped
+  at the 8 most recent items (oldest sent previews drop off first).
+
+## 0.3.2
+
+- Docs: demo render refreshed with the current `from clipboard` label
+  (retired `clipboard.png`); description/keywords tuned for npm and the
+  pi.dev gallery.
+
 ## 0.3.1
 
 - The live preview is now an editor **widget** (`ctx.ui.setWidget`, placed

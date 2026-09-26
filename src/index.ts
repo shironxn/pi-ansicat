@@ -164,45 +164,52 @@ function markerKey(marker: ImageMarker): string { return marker.text.trim(); }
 // overrides — strip them before anything lands in rendered TUI output.
 const tuiSafe = (s: string): string => s.replace(/[\x00-\x1f\x7f-\x9f\p{Cf}]/gu, "");
 
-// Rebuild the live-preview widget from the queued images whose markers are
-// still present in the editor. Keyed: setWidget is only re-called when the
-// visible set actually changes.
-function renderPreviewWidget(ctx: ExtensionContext, items: { img: PendingImageEx; marker: ImageMarker }[], key: string): void {
+// Rebuild the live-preview widget. Items: pending = marker still in the
+// editor; sent = attached on the last submit (kept until the cap drops them
+// or the session ends). The widget never enters the LLM context.
+function renderPreviewWidget(ctx: ExtensionContext): void {
+  // Bound the widget: drop the oldest sent items past the cap.
+  while (_widgetItems.length > MAX_WIDGET_ITEMS) {
+    const idx = _widgetItems.findIndex((it) => it.state === "sent");
+    if (idx === -1) break;
+    _widgetItems.splice(idx, 1);
+  }
+  if (_widgetItems.length === 0) {
+    ctx.ui.setWidget(WIDGET_KEY, undefined);
+    _previewWidgetActive = false;
+    return;
+  }
   ctx.ui.setWidget(WIDGET_KEY, (_tui, theme) => {
     const container = new Container();
-    for (const { img, marker } of items) {
-      container.addChild(new Text(theme.fg("accent", `ansicat: ${marker.text.trim()} (${img.label})`), 0, 0));
+    for (const it of _widgetItems) {
+      container.addChild(new Text(theme.fg("accent", it.title), 0, 0));
       container.addChild(new Spacer(1));
-      if (img.art.length > 0) for (const line of img.art) container.addChild(new Text(line, 0, 0));
-      else container.addChild(new Text(theme.fg("muted", "preview unavailable"), 0, 0));
+      if (it.art.length > 0) for (const line of it.art) container.addChild(new Text(line, 0, 0));
+      else container.addChild(new Text(theme.fg("muted", it.note ?? "preview unavailable"), 0, 0));
       container.addChild(new Spacer(1));
     }
     return container;
   }, { placement: "aboveEditor" });
   _previewWidgetActive = true;
-  _lastPreviewKey = key;
 }
 
-// Keep the live preview in sync with the editor: a paste whose marker text
-// has been deleted drops out of the widget immediately; an empty visible set
-// clears the widget entirely. Called on a zero timer after terminal input so
-// the editor applies the keystroke first.
+// Keep pending previews in sync with the editor: a paste whose marker text
+// has been deleted drops out of the widget immediately. Zero timer after
+// terminal input so the editor applies the keystroke first. Sent items are
+// never touched here — they persist until the cap or the session ends.
 function syncPreviewWidget(): void {
   if (!_previewWidgetActive || !_ctx || !_queue) return;
   const ctx = _ctx, queue = _queue;
   const editor = ctx.ui.getEditorText();
-  const items = queue.images
-    .map((img) => ({ img, marker: queue.markers.find((m) => m.id === img.id) }))
-    .filter((it): it is { img: PendingImageEx; marker: ImageMarker } => !!it.marker && editor.includes(it.marker.text.trim()));
-  const key = items.map((it) => it.marker.id).join(",");
-  if (key === _lastPreviewKey) return;
-  if (items.length === 0) {
-    ctx.ui.setWidget(WIDGET_KEY, undefined);
-    _previewWidgetActive = false;
-    _lastPreviewKey = "";
-    return;
-  }
-  renderPreviewWidget(ctx, items, key);
+  let changed = false;
+  _widgetItems = _widgetItems.filter((it) => {
+    if (it.state !== "pending") return true;
+    const marker = queue.markers.find((m) => m.id === it.id);
+    const keep = !!marker && editor.includes(marker.text.trim());
+    if (!keep) changed = true;
+    return keep;
+  });
+  if (changed) renderPreviewWidget(ctx);
 }
 
 async function buildPreview(bytes: Uint8Array, mimeType: string, label: string): Promise<{ art: string[]; note?: string }> {
@@ -230,8 +237,10 @@ async function buildPreview(bytes: Uint8Array, mimeType: string, label: string):
 }
 
 const WIDGET_KEY = "pi-ansicat-preview";
+const MAX_WIDGET_ITEMS = 8;
+interface WidgetItem { id: string; title: string; art: string[]; note?: string; label: string; state: "pending" | "sent"; }
+let _widgetItems: WidgetItem[] = [];
 let _previewWidgetActive = false;
-let _lastPreviewKey = "";
 let _unsubTerminalInput: (() => void) | null = null;
 
 function queueImage(queue: ImageQueue, pending: PendingImageEx, ctx: ExtensionContext): ImageMarker {
@@ -278,11 +287,8 @@ async function doPaste(): Promise<void> {
     const label = "from clipboard";
     const { art, note } = await buildPreview(image.bytes, image.mimeType, label);
     const marker = queueImage(queue, { id: "", base64: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType, art, label }, ctx);
-    // Mark the pipeline pending BEFORE the timer runs: syncPreviewWidget's
-    // guard requires an active preview, and on a fresh paste nothing has set
-    // it yet. Zero timer so pasteToEditor's marker text is already applied.
-    _previewWidgetActive = true;
-    setTimeout(() => syncPreviewWidget(), 0);
+    _widgetItems.push({ id: marker.id, title: `ansicat: ${marker.text.trim()} (${label})`, art, note, label, state: "pending" });
+    renderPreviewWidget(ctx);
     if (note && art.length === 0) ctx.ui.notify(note, "info");
   } catch (error) { ctx.ui.notify(`ansicat paste failed: ${error instanceof Error ? error.message : String(error)}`, "warning"); }
   finally { _pasting = false; }
@@ -316,13 +322,23 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
     if (event.source === "extension") return { action: "continue" as const };
     if (!_queue || !_queue.markers.length || !_ctx) return { action: "continue" as const };
     const ctx = _ctx, queue = _queue; // survive session_shutdown during the awaits below
-    // Submit resolves the live preview unconditionally: kept pastes attach,
-    // skipped pastes vanish — the widget goes either way.
-    if (_previewWidgetActive) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; _lastPreviewKey = ""; }
     const attached = queue.markers.filter((m) => event.text.includes(markerKey(m)));
+    const attachedIds = new Set(attached.map((m) => m.id));
     const imagesToAttach: PendingImageEx[] = [];
     for (const marker of attached) { const pending = queue.images.find((img) => img.id === marker.id); if (pending) imagesToAttach.push(pending); }
-    queue.images.length = 0; queue.markers.length = 0; queue.nextIndex = 1;
+    // Resolve pending widget items: attached -> sent (kept visible), marker
+    // deleted -> skipped (preview dropped). Numbering is session-wide, so
+    // nextIndex keeps counting instead of restarting at 1.
+    let widgetChanged = false;
+    _widgetItems = _widgetItems.filter((it) => {
+      if (it.state !== "pending") return true;
+      if (attachedIds.has(it.id)) { it.state = "sent"; return true; }
+      widgetChanged = true;
+      return false;
+    });
+    queue.images.length = 0; queue.markers.length = 0;
+    if (_widgetItems.length === 0 && _previewWidgetActive) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
+    else if (widgetChanged) renderPreviewWidget(ctx);
     if (imagesToAttach.length === 0) return { action: "continue" as const };
     let text = event.text;
     if (!modelSupportsImages(ctx)) {
@@ -418,8 +434,8 @@ export default function (pi: ExtensionAPI): void {
     _config = loadConfig();
     // A fresh session must not inherit the previous session's live preview,
     // and the terminal-input sync is re-registered for the new session.
-    if (_previewWidgetActive) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
-    _lastPreviewKey = "";
+    if (_previewWidgetActive || _widgetItems.length) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
+    _widgetItems = [];
     if (_unsubTerminalInput) { _unsubTerminalInput(); _unsubTerminalInput = null; }
     if (ctx.hasUI) {
       _unsubTerminalInput = ctx.ui.onTerminalInput(() => {
@@ -468,7 +484,7 @@ export default function (pi: ExtensionAPI): void {
   });
   pi.on("session_shutdown", () => {
     if (_previewWidgetActive) { _ctx?.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
-    _lastPreviewKey = "";
+    _widgetItems = [];
     if (_unsubTerminalInput) { _unsubTerminalInput(); _unsubTerminalInput = null; }
     _ctx = null; _queue = null; _pasting = false; _describeCache.clear();
   });
