@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.6
+
+- pi.dev card thumbnail: `pi.image` was a relative path
+  (`./assets/preview.png`) that pi.dev's preview resolver silently drops, so
+  the catalog card showed an empty placeholder. Now an absolute URL.
+
 ## 0.3.5
 
 - README privacy section: the closing line claimed previews were "never
