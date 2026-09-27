@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.7
+
+- README: all prose em dashes rewritten (plain punctuation reads the same and
+  renders everywhere), the broken "Reasoning models spend the token cap" quote
+  fixed to a plain pointer, the demo image and license badge switched to
+  absolute URLs so they render on npmjs.com too, and the non-Linux clipboard
+  error documented in Troubleshooting.
+
 ## 0.3.6
 
 - pi.dev card thumbnail: `pi.image` was a relative path

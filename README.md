@@ -3,7 +3,7 @@
 An extension for [pi](https://pi.dev), the coding agent ([source](https://github.com/earendil-works/pi)).
 
 [![npm](https://img.shields.io/npm/v/pi-ansicat)](https://www.npmjs.com/package/pi-ansicat)
-[![license](https://img.shields.io/npm/l/pi-ansicat)](./LICENSE)
+[![license](https://img.shields.io/npm/l/pi-ansicat)](https://github.com/shironxn/pi-ansicat/blob/main/LICENSE)
 
 Paste an image into pi and see it. pi-ansicat reads the clipboard, draws a
 truecolor ANSI preview above your message, and attaches the image to the
@@ -25,11 +25,11 @@ that cannot see images still knows what you pasted.
 
 ## Demo
 
-Paste with `Ctrl+V` — the `[Image #N]` marker lands in the editor and a
+Paste with `Ctrl+V`. The `[Image #N]` marker lands in the editor and a
 truecolor preview renders above it. This is the real renderer output
 (`renderHalfBlocks`, default 14 lines), drawn as a terminal mock:
 
-![pi-ansicat: ANSI half-block preview of a clipboard paste](assets/preview.png)
+![pi-ansicat: ANSI half-block preview of a clipboard paste](https://cdn.jsdelivr.net/npm/pi-ansicat/assets/preview.png)
 
 ## Install
 
@@ -52,7 +52,7 @@ yes once, or edit it yourself:
 Linux only. Wayland needs `wl-clipboard`, X11 needs `xclip`.
 
 Preview works out of the box for PNG (any bit depth or color type, including
-palette — interlaced/Adam7 PNGs are the exception: they attach but don't
+palette; interlaced/Adam7 PNGs are the exception: they attach but don't
 preview) and BMP. JPEG, WebP, and GIF are previewed when one of ImageMagick
 (`magick` or `convert`) or `ffmpeg` is installed. Without a converter, those
 three still attach to the message, just without a preview.
@@ -64,7 +64,7 @@ as a live widget above the editor while the paste is pending. The
 `[Image #N]` marker in the editor is what actually attaches the image on
 submit:
 
-- **Delete the marker before submitting** and that preview disappears — the
+- **Delete the marker before submitting** and that preview disappears. The
   paste is skipped, nothing is sent, nothing is kept.
 - **Submit with the marker in place** and the preview moves into the chat
   transcript, above your message, where it scrolls with the conversation.
@@ -90,13 +90,13 @@ pasted.
 
 The fallback runs only for those models. Before submit, pi-ansicat sends each
 attached image to a vision model you configure, appends the returned
-description to your prompt, and labels it as machine-generated evidence —
+description to your prompt, and labels it as machine-generated evidence:
 data the model can reason from, never instructions to follow. Models that
 already accept images skip the fallback entirely and get the real image.
 
 ## Config
 
-Optional `~/.pi/agent/ansicat.json` — the path follows `$PI_CODING_AGENT_DIR`
+Optional `~/.pi/agent/ansicat.json`: the path follows `$PI_CODING_AGENT_DIR`
 when set (default `~/.pi/agent`); the old `~/.pi/ansicat.json` is still read.
 Both keys are optional, defaults shown:
 
@@ -123,8 +123,8 @@ text-only models still get a description:
 `provider` and `model` name any vision-capable model already configured in pi
 (see `pi --list-models`); the values above are only an example. Optional
 `prompt` replaces the built-in describe prompt; `maxTokens` caps the
-description length — leave it out and pi uses the model's own limit (see
-"Reasoning models spend the token cap" below). The `vision` block is used only
+description length. Leave it out and pi uses the model's own limit (see
+the reasoning-model note below). The `vision` block is used only
 when the active model cannot take images. Without it, text-only models get a
 warning and the image is dropped.
 
@@ -132,7 +132,8 @@ warning and the image is dropped.
 
 The description is only as good as the model behind it. A capable vision model
 transcribes text exactly; a weak one drops punctuation, collapses spacing, and
-reflows a compiler error's alignment — the characters you copy and run. Point
+reflows a compiler error's alignment, including the characters you copy and
+run. Point
 `vision` at a model you trust for reading text off an image, and list what is
 available with `pi --list-models`.
 
@@ -143,13 +144,13 @@ Two behaviors are worth knowing:
   nudge, then reports the image as unavailable rather than passing the refusal
   off as a description.
 - **Reasoning models spend the token cap before writing anything.** Do not set
-  `maxTokens` low — or at all, unless you have a reason; left unset, pi uses the
+  `maxTokens` low, or at all, unless you have a reason; left unset, pi uses the
   model's own (much larger) limit. If you *do* set it and the reply is cut off,
   pi-ansicat retries once without the cap and keeps the complete reply; if that
   is cut off too, the description is kept but marked truncated.
 
 If a describe call fails outright (quota, timeout), the prompt says the image is
-unavailable — it never presents the error text as if it described the picture.
+unavailable. It never presents the error text as if it described the picture.
 
 ## How it works
 
@@ -170,13 +171,13 @@ unavailable — it never presents the error text as if it described the picture.
 ## Privacy
 
 Images processed by the vision fallback are downscaled locally first (through
-pi's own image resizer) and sent only to the provider named in `ansicat.json`
-— that provider is reached through pi, so credentials stay in pi's own auth
+pi's own image resizer) and sent only to the provider named in `ansicat.json`.
+That provider is reached through pi, so credentials stay in pi's own auth
 store and never pass through this package. Previews are session-local
 records: a transient editor widget while pending, then a chat-transcript
 entry after submit. That entry is written to pi's own session file, like any
-other transcript entry, so the preview's text and ANSI art persist on disk —
-but the image bytes are not written anywhere, and the entry never joins the
+other transcript entry, so the preview's text and ANSI art persist on disk.
+But the image bytes are not written anywhere, and the entry never joins the
 model's context. A skipped paste leaves no record at all. `/ansicat <file>`
 previews are session-local records too, also never sent to the model.
 Clipboard reads, decoding, and previews all happen locally; nothing is sent
@@ -188,11 +189,13 @@ anywhere except the image you explicitly describe.
   built-in paste is still bound. Check the keybindings step in Install, then
   `/reload`.
 - **"No image found in clipboard."** The clipboard holds content, but nothing
-  image-shaped — you copied text, say. Copy an image and retry.
+  image-shaped (you copied text, say). Copy an image and retry.
 - **"ansicat paste failed: …"** The read itself failed; the message names why.
-  `wl-paste not found or no image in clipboard` / `xclip not found or no image
-  in clipboard` means the clipboard tool is missing **or** that session's
-  clipboard is empty — install `wl-clipboard` (Wayland) or `xclip` (X11) and
+  On Linux without a display server or clipboard tool, or on macOS/Windows
+  (clipboard read is Linux-only for now): `wl-paste not found or no image in
+  clipboard` / `xclip not found or no image in clipboard` means the clipboard
+  tool is missing **or** that session's
+  clipboard is empty. Install `wl-clipboard` (Wayland) or `xclip` (X11) and
   make sure an image is copied. `no Wayland/X11 clipboard available` means
   neither `WAYLAND_DISPLAY` nor `DISPLAY` is set. `clipboard image format not
   supported (…)` means the image is in a format pi-ansicat cannot read.
