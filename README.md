@@ -1,33 +1,29 @@
 # pi-ansicat
 
-An extension for [pi](https://pi.dev), the coding agent ([source](https://github.com/earendil-works/pi)).
+Paste an image into [pi](https://pi.dev) and see it in your terminal. pi-ansicat
+reads the clipboard, draws a truecolor ANSI preview, and attaches the image to
+the prompt.
+
+Text-only models still get the picture. A vision model describes the image
+first, and the description travels as labeled text. This works for pasted
+images and for image files opened with the `read` tool.
 
 [![npm](https://img.shields.io/npm/v/pi-ansicat)](https://www.npmjs.com/package/pi-ansicat)
 [![license](https://img.shields.io/npm/l/pi-ansicat)](https://github.com/shironxn/pi-ansicat/blob/main/LICENSE)
 
-Paste an image into pi and see it. pi-ansicat reads the clipboard, draws a
-truecolor ANSI preview above your message, and attaches the image to the
-prompt. It also keeps text-only models in the loop: before submit, a vision
-model describes the image and the description rides along as text, so a model
-that cannot see images still knows what you pasted.
+## Features
 
-## What it does
-
-- **Paste with `Ctrl+V`.** An `[Image #N]` marker lands in the editor and a
-  half-block preview appears above it. On submit the preview moves into the
-  chat transcript (above your message) and scrolls with the conversation.
-- **Preview anywhere.** The preview is plain ANSI text, so it survives foot,
-  tmux, ssh, and any terminal that shows truecolor. No image protocol needed.
-- **No dependencies for PNG and BMP.** Decoding is built in.
-- **Vision fallback for text-only models.** If your current model cannot take
-  images, each pasted image is described once and the text is appended to the
-  prompt.
+- `Ctrl+V` pastes a clipboard image, inserts an `[Image #N]` marker, and shows
+  an ANSI preview above the editor.
+- On submit, the preview moves into the chat transcript and scrolls with it.
+- Skip a paste by deleting its marker before submit. The image is not sent.
+- PNG and BMP decode without extra dependencies.
+- JPEG, WebP, and GIF preview through ImageMagick or ffmpeg when installed.
+- Text-only models get a vision description, labeled as machine-generated
+  evidence, for both pasted images and `read` results.
+- Models with image input receive the real image, unchanged.
 
 ## Demo
-
-Paste with `Ctrl+V`. The `[Image #N]` marker lands in the editor and a
-truecolor preview renders above it. This is the real renderer output
-(`renderHalfBlocks`, default 14 lines), drawn as a terminal mock:
 
 ![pi-ansicat: ANSI half-block preview of a clipboard paste](https://cdn.jsdelivr.net/npm/pi-ansicat/assets/preview.png)
 
@@ -37,11 +33,9 @@ truecolor preview renders above it. This is the real renderer output
 pi install npm:pi-ansicat
 ```
 
-Then `/reload` in pi. On first start, pi-ansicat asks to unbind pi's built-in
-image paste from `Ctrl+V` (the same keys, otherwise you get a double paste).
-The original `keybindings.json` gets a backup next to it
-(`keybindings.json.bak-ansicat-<timestamp>`). Answer
-yes once, or edit it yourself:
+Run `/reload`, then accept the prompt that unbinds pi's built-in image paste
+from `Ctrl+V`. The original `keybindings.json` is backed up next to it. To do it
+by hand:
 
 ```json
 { "app.clipboard.pasteImage": [] }
@@ -49,160 +43,107 @@ yes once, or edit it yourself:
 
 ## Requirements
 
-Linux only. Wayland needs `wl-clipboard`, X11 needs `xclip`.
-
-Preview works out of the box for PNG (any bit depth or color type, including
-palette; interlaced/Adam7 PNGs are the exception: they attach but don't
-preview) and BMP. JPEG, WebP, and GIF are previewed when one of ImageMagick
-(`magick` or `convert`) or `ffmpeg` is installed. Without a converter, those
-three still attach to the message, just without a preview.
+- pi 1.3.0 or newer.
+- Linux. Wayland needs `wl-clipboard`, X11 needs `xclip`.
+- Optional: ImageMagick (`magick` or `convert`) or `ffmpeg` for JPEG, WebP, and
+  GIF previews. Without one, those formats still attach, just without a preview.
 
 ## Use
 
-Paste with `Ctrl+V` (`Alt+V` and `Ctrl+Alt+V` work too). The preview renders
-as a live widget above the editor while the paste is pending. The
-`[Image #N]` marker in the editor is what actually attaches the image on
-submit:
+Paste with `Ctrl+V`. `Alt+V` and `Ctrl+Alt+V` also work.
 
-- **Delete the marker before submitting** and that preview disappears. The
-  paste is skipped, nothing is sent, nothing is kept.
-- **Submit with the marker in place** and the preview moves into the chat
-  transcript, above your message, where it scrolls with the conversation.
-  `[Image #N]` numbering is per session, so every sent preview keeps a unique
-  title.
+The `[Image #N]` marker is what attaches the image. Delete the marker before
+submit to skip that paste. Keep it to send the image, and the preview moves into
+the transcript above your message.
 
-One command handles previews and sizing:
+Preview or resize outside the clipboard flow:
 
 ```text
-/ansicat /path/to/image.png   # preview an image file (@path and ~/... also work)
-/ansicat cols=32 maxLines=8   # resize the preview (applies live, this session only)
-/ansicat                      # show the current size
+/ansicat /path/to/image.png   preview a file (@path and ~/... work too)
+/ansicat cols=32 maxLines=8   resize the preview for this session
+/ansicat                      show the current size
 ```
 
-File previews share the clipboard's 20MB cap, and formats outside
-PNG/BMP/JPEG/WebP/GIF report the format as unsupported.
+File previews share the 20 MB cap. PNG, BMP, JPEG, WebP, and GIF are supported.
 
-## Why the vision fallback
+## Text-only models
 
-A text-only model (most fast/cheap models) receives an image attachment and
-cannot read it. Pi strips the image, and the model never learns what you
-pasted.
-
-The fallback runs only for those models. Before submit, pi-ansicat sends each
-attached image to a vision model you configure, appends the returned
-description to your prompt, and labels it as machine-generated evidence:
-data the model can reason from, never instructions to follow. Models that
-already accept images skip the fallback entirely and get the real image.
-
-## Config
-
-Optional `~/.pi/agent/ansicat.json`: the path follows `$PI_CODING_AGENT_DIR`
-when set (default `~/.pi/agent`); the old `~/.pi/ansicat.json` is still read.
-Both keys are optional, defaults shown:
+Add a `vision` block to the config. Without one, pasted images are dropped with
+a warning, and `read` keeps pi's built-in "image omitted" note.
 
 ```json
 {
-  "cols": 48,
-  "maxLines": 14
+  "vision": { "provider": "openai", "model": "gpt-4o-mini" }
 }
 ```
 
-Values clamp to those ranges (`cols` 20–120, `maxLines` 4–40).
+`provider` and `model` must name a vision-capable model already configured in
+pi. See `pi --list-models`. The example above is only an example.
 
-The vision fallback needs to know which model to use. Add a `vision` block so
-text-only models still get a description:
+How it behaves:
+
+- **Pasted image:** the description is appended to your prompt.
+- **`read` result:** the image block is replaced by the description, so a
+  text-only model can read screenshots and diagrams.
+- **Image-capable model:** nothing is described. The real image is sent.
+- **Refusal:** if the vision model says it cannot view images, pi-ansicat
+  retries once with a nudge, then reports the image as unavailable.
+- **Truncation:** if the reply hits the output limit, the text is kept and
+  marked as truncated.
+- **Failure:** an API error is shown to you. It is never used as the
+  description. The model sees an explicit "not available" notice instead.
+
+Descriptions are cached per session. The same image is not described twice.
+They are labeled machine-generated evidence, and OCR text inside them is
+treated as untrusted data.
+
+## Config
+
+Config lives at `~/.pi/agent/ansicat.json`. The old `~/.pi/ansicat.json` is
+still read. Every key is optional:
 
 ```json
 {
   "cols": 48,
   "maxLines": 14,
-  "vision": { "provider": "openai", "model": "gpt-4o-mini" }
+  "vision": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "prompt": "optional custom prompt",
+    "maxTokens": 800
+  }
 }
 ```
 
-`provider` and `model` name any vision-capable model already configured in pi
-(see `pi --list-models`); the values above are only an example. Optional
-`prompt` replaces the built-in describe prompt; `maxTokens` caps the
-description length. Leave it out and pi uses the model's own limit (see
-the reasoning-model note below). The `vision` block is used only
-when the active model cannot take images. Without it, text-only models get a
-warning and the image is dropped.
-
-### Choosing the vision model
-
-The description is only as good as the model behind it. A capable vision model
-transcribes text exactly; a weak one drops punctuation, collapses spacing, and
-reflows a compiler error's alignment, including the characters you copy and
-run. Point
-`vision` at a model you trust for reading text off an image, and list what is
-available with `pi --list-models`.
-
-Two behaviors are worth knowing:
-
-- **A model can answer with "I am a text-only assistant and cannot view
-  images".** pi-ansicat detects that refusal and retries once with an explicit
-  nudge, then reports the image as unavailable rather than passing the refusal
-  off as a description.
-- **Reasoning models spend the token cap before writing anything.** Do not set
-  `maxTokens` low, or at all, unless you have a reason; left unset, pi uses the
-  model's own (much larger) limit. If you *do* set it and the reply is cut off,
-  pi-ansicat retries once without the cap and keeps the complete reply; if that
-  is cut off too, the description is kept but marked truncated.
-
-If a describe call fails outright (quota, timeout), the prompt says the image is
-unavailable. It never presents the error text as if it described the picture.
-
-## How it works
-
-1. Reads the clipboard with `wl-paste` or `xclip` (auto-detected).
-2. Decodes PNG and BMP with no extra dependencies and renders a half-block
-   truecolor preview: a transient widget above the editor while pending, then
-   a session record in the chat transcript once submitted. Neither form ever
-   enters the model's context. PNG support
-   covers every bit depth (1/2/4/8/16), color
-   types 0/2/3/4/6 (gray, RGB, palette, gray-alpha, RGBA), and `tRNS`
-   transparency; BMP covers 1/4/8-bit palette and 24/32-bit.
-3. Converts JPEG, WebP, and GIF to PNG first, using a system image tool when
-   one is present. No converter means no preview, never a wrong one.
-4. On submit at a text-only model, describes each image once and appends the
-   description as labeled machine-generated evidence. Descriptions are cached
-   per session so the same image is not described twice.
+- `cols`: preview width, clamped to 20-120.
+- `maxLines`: preview height, clamped to 4-40.
+- `vision.prompt`: replaces the built-in describe prompt.
+- `vision.maxTokens`: caps the reply. Leave it unset unless you have a reason.
+  Reasoning models spend the cap before writing anything. If a capped reply is
+  cut off, pi-ansicat retries once without the cap.
 
 ## Privacy
 
-Images processed by the vision fallback are downscaled locally first (through
-pi's own image resizer) and sent only to the provider named in `ansicat.json`.
-That provider is reached through pi, so credentials stay in pi's own auth
-store and never pass through this package. Previews are session-local
-records: a transient editor widget while pending, then a chat-transcript
-entry after submit. That entry is written to pi's own session file, like any
-other transcript entry, so the preview's text and ANSI art persist on disk.
-But the image bytes are not written anywhere, and the entry never joins the
-model's context. A skipped paste leaves no record at all. `/ansicat <file>`
-previews are session-local records too, also never sent to the model.
-Clipboard reads, decoding, and previews all happen locally; nothing is sent
-anywhere except the image you explicitly describe.
+Clipboard reads, decoding, and previews stay local. Only an image you describe
+is sent to the provider named in `ansicat.json`, through pi's own auth, so
+credentials never pass through this package.
+
+A submitted preview is stored in pi's session file as text and ANSI art. The
+image bytes are not written to disk. Previews never enter the model's context.
 
 ## Troubleshooting
 
-- **Nothing happens on `Ctrl+V`.** Another program owns the key, or pi's
-  built-in paste is still bound. Check the keybindings step in Install, then
-  `/reload`.
-- **"No image found in clipboard."** The clipboard holds content, but nothing
-  image-shaped (you copied text, say). Copy an image and retry.
-- **"ansicat paste failed: …"** The read itself failed; the message names why.
-  On Linux without a display server or clipboard tool, or on macOS/Windows
-  (clipboard read is Linux-only for now): `wl-paste not found or no image in
-  clipboard` / `xclip not found or no image in clipboard` means the clipboard
-  tool is missing **or** that session's
-  clipboard is empty. Install `wl-clipboard` (Wayland) or `xclip` (X11) and
-  make sure an image is copied. `no Wayland/X11 clipboard available` means
-  neither `WAYLAND_DISPLAY` nor `DISPLAY` is set. `clipboard image format not
-  supported (…)` means the image is in a format pi-ansicat cannot read.
-- **Preview is blank or missing.** The format has no converter installed. See
-  Requirements. The image still attaches.
-- **"text-only model and no vision config."** Add a `vision` block to
-  `~/.pi/agent/ansicat.json`.
+- **`Ctrl+V` does nothing.** Another program owns the key, or pi's built-in
+  paste is still bound. Check the keybindings step in Install, then `/reload`.
+- **"No image found in clipboard."** The clipboard holds something that is not
+  an image.
+- **"ansicat paste failed: ..."** The clipboard tool is missing, no display
+  server is set, or the format is unsupported. Install `wl-clipboard` or
+  `xclip` and make sure an image is copied. Clipboard reads are Linux-only.
+- **Preview is blank.** The format needs a converter. See Requirements. The
+  image still attaches.
+- **Interlaced PNG.** It attaches, but pi-ansicat does not preview it.
+- **"text-only model and no vision config."** Add the `vision` block above.
 
 ## License
 

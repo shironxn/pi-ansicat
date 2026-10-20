@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 
-// Formats the native decoder cannot read, converted to PNG via a system
-// tool. No converter installed = no preview, never a wrong one.
+// JPEG, WebP, and GIF are converted to PNG through a system tool. No
+// converter means no preview, never a wrong one.
 const CONVERTIBLE = new Set(["image/jpeg", "image/webp", "image/gif"]);
 
 const CONVERT_TIMEOUT_MS = 5000;
@@ -9,7 +9,7 @@ const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 
 type Converter = { cmd: string; args: string[] };
 
-// Tried in order. Each reads the image from stdin and writes PNG to stdout.
+// Tried in order; each reads stdin and writes PNG to stdout.
 const CONVERTERS: Converter[] = [
   { cmd: "magick", args: ["-", "png:-"] },
   { cmd: "convert", args: ["-", "png:-"] },
@@ -18,9 +18,8 @@ const CONVERTERS: Converter[] = [
 
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
-// ImageMagick sniffs content itself, so bytes whose magic does not match the
-// declared MIME could reach whatever coders the system policy allows. Gate on
-// magic before spawning.
+// Gate on magic before spawning: ImageMagick sniffs content itself, so a
+// payload that lies about its MIME could reach other coders.
 const MAGIC: Record<string, (b: Buffer) => boolean> = {
   "image/jpeg": (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
   "image/gif": (b) => b.length >= 6 && b.toString("latin1", 0, 6).startsWith("GIF8"),
@@ -52,11 +51,7 @@ function runConverter(c: Converter, input: Uint8Array): Promise<Buffer | null> {
   });
 }
 
-/**
- * Return PNG bytes for an image the native decoder cannot handle.
- * Returns null when the format needs no conversion, or when no converter is
- * available or it failed. Callers treat null as "no preview".
- */
+// PNG bytes, or null when the format needs no conversion or none is possible.
 export async function toPngForPreview(bytes: Uint8Array, mimeType: string): Promise<Uint8Array | null> {
   if (!CONVERTIBLE.has(mimeType)) return null;
   const magic = MAGIC[mimeType];

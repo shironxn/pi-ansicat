@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { ansicatConfigPaths } from "./config.js";
+import { inputSupportsImages, interpretReply, pickReply, resolveDescription } from "./refusal.js";
 
 export interface VisionConfig {
   provider: string;
@@ -10,16 +11,9 @@ export interface VisionConfig {
   maxTokens?: number;
 }
 
-// Identification leads, description supports. Without an explicit "name it"
-// instruction, vision models drift into generic visual description ("a man in
-// a suit") and skip recognition entirely, even when they know the answer.
-//
-// Two clauses are load-bearing for a text-only-model transcript: the
-// exact-transcription rule, because models otherwise tidy OCR — dropping
-// punctuation, collapsing spaces, reflowing a compiler error's alignment — and
-// the output is often copied and run verbatim; and the "say so plainly" rule,
-// because without it models confidently label an unrecognizable subject
-// ("Smiley face icon" for a blur) instead of flagging doubt.
+// Naming the subject matters: without it, vision models describe around a
+// recognizable image instead of identifying it. Exact transcription matters
+// because the output is often copied and run verbatim.
 const DEFAULT_DESCRIBE_PROMPT =
   "Identify this image for a text-only assistant that must act on it. Lead with what it IS: when the " +
   "subject is recognizable — a person, fictional character, anime/manga/game/movie title, landmark, " +
@@ -31,9 +25,8 @@ const DEFAULT_DESCRIBE_PROMPT =
   "commands, URLs); layout, colors, and any detail that changes meaning if omitted. If unsure of an " +
   "identification or a value, give your best guess with a confidence note. Plain text, no preamble.";
 
+// The vision model comes only from ansicat.json's `vision` block.
 export function loadVisionConfig(): VisionConfig | undefined {
-  // Standalone: the vision model is configured only in ansicat.json's `vision`
-  // block — no reading of other extensions' config files (may move or vanish).
   for (const p of ansicatConfigPaths()) {
     try {
       const raw = JSON.parse(readFileSync(p, "utf8")) as { vision?: VisionConfig };
@@ -43,20 +36,9 @@ export function loadVisionConfig(): VisionConfig | undefined {
   return undefined;
 }
 
-// pi defaults a model's `input` to ["text"] when a provider does not declare
-// image support (provider-composer.js). Treating a missing list as "can take
-// images" would send raw image blocks to a text-only model — the exact case
-// this fallback exists to avoid. Only an explicit "image" entry counts. The
-// predicate is pure and lives in refusal.ts so it is unit-testable.
 export function modelSupportsImages(ctx: ExtensionContext): boolean {
   return inputSupportsImages((ctx.model as { input?: string[] } | undefined)?.input);
 }
-
-// Refusal detection and the retry policy live in ./refusal.ts so they can be
-// unit-tested without loading the pi runtime (this module imports pi and reads
-// config files).
-import { inputSupportsImages, interpretReply, pickReply, resolveDescription } from "./refusal.js";
-export { isRefusal } from "./refusal.js";
 
 interface Attempt {
   stopReason: string;
@@ -91,15 +73,13 @@ export async function describeImage(
             ],
           } as never,
         ],
-        // Omitted unless set: pi then falls back to the model's own maxTokens.
-        // Sending a small default would starve reasoning models, which spend
-        // the cap on hidden reasoning before writing anything.
+        // Omitted unless set, so pi uses the model's own limit. A small
+        // default would starve reasoning models.
         ...(maxTokens !== undefined ? { maxTokens } : {}),
       },
       { signal },
     );
-    // registry.complete surfaces API failures as result metadata, not rejections:
-    // an aborted/errored call arrives here with (possibly partial) content.
+    // registry.complete reports API failures as metadata, not rejections.
     return {
       stopReason: message.stopReason,
       errorMessage: message.errorMessage,
@@ -111,11 +91,8 @@ export async function describeImage(
 
   const run = async (text: string): Promise<string | undefined> => {
     const first = await attempt(text, cfg.maxTokens);
-    // A maxTokens the user set can be too small for a reasoning model. When the
-    // capped reply is cut off, retry once without the cap — the model's own
-    // limit is the ceiling — and keep whichever reply is complete, or the
-    // longer one if both were cut. With no user cap there is nothing to relax:
-    // the reply is already at the model's limit, so it is only marked.
+    // A user cap can be too small for a reasoning model: retry once without
+    // it when the reply was cut, and keep the better result.
     if (first.stopReason === "length" && cfg.maxTokens !== undefined) {
       const wider = await attempt(text, undefined).catch(() => undefined);
       if (wider && wider.stopReason !== "error" && wider.stopReason !== "aborted") {

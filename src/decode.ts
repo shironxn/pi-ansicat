@@ -52,8 +52,7 @@ function parseChunks(bytes: Uint8Array): PngChunks {
   return { width, height, bitDepth, colorType, interlace, palette, trns, idat };
 }
 
-// Read sample `index` from a scanline at the given bit depth. Samples are
-// packed big-endian for sub-byte depths, and 16-bit samples keep the high byte.
+// Sub-byte samples are packed big-endian; 16-bit samples keep the high byte.
 function sampleAt(row: Uint8Array, index: number, bitDepth: number): number {
   if (bitDepth === 8) return row[index]!;
   if (bitDepth === 16) return (row[index * 2]! << 8) | row[index * 2 + 1]!;
@@ -72,8 +71,7 @@ function unfilter(raw: Uint8Array, height: number, rowBytes: number, bpp: number
   let p = 0;
   for (let y = 0; y < height; y++) {
     const filter = raw[p++]!;
-    // Anything above 4 is a malformed stream; the fall-through would decode
-    // it as Paeth and produce silently wrong pixels.
+    // Anything above 4 would fall through and decode as Paeth, silently wrong.
     if (filter > 4) throw new Error(`PNG invalid filter type ${filter}`);
     const base = y * rowBytes;
     const prevBase = (y - 1) * rowBytes;
@@ -97,9 +95,8 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
   const { width, height, bitDepth, colorType, interlace, palette, trns, idat } = parseChunks(bytes);
   if (width === 0 || height === 0) throw new Error("missing IHDR");
   if (interlace !== 0) throw new Error("interlaced PNG (Adam7) not supported");
-  // Dimension sanity before any allocation: IHDR is unverified input and a
-  // tiny file can declare gigapixel sizes. 64M pixels (~16000x4000) is far
-  // above any real screenshot.
+  // IHDR is unverified input: a tiny file can declare gigapixel sizes, so
+  // bound the pixel area before any allocation.
   if (!Number.isSafeInteger(width * height) || width * height > 64_000_000) {
     throw new Error(`PNG dimensions ${width}x${height} rejected`);
   }
@@ -112,12 +109,10 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
   const rowBytes = Math.ceil((width * bitsPerPixel) / 8);
   const bpp = Math.max(1, Math.ceil(bitsPerPixel / 8));
   const rawLen = height * (rowBytes + 1);
-  // The pixel-area guard bounds w×h but not bytes-per-pixel: 16-bit RGBA at
-  // 64M px would allocate ~512MB here. Cap the inflated size absolutely.
+  // The pixel guard does not bound bytes per pixel: cap the inflated size too.
   if (rawLen > 256 * 1024 * 1024) throw new Error("PNG too large to decode");
-  // maxOutputLength bounds the inflate allocation (zip-bomb guard); the
-  // length check rejects streams that end early, which would otherwise
-  // decode as silent black rows.
+  // maxOutputLength guards the inflate allocation; the length check catches
+  // streams that end early and would otherwise decode as silent black rows.
   const raw = inflateSync(Buffer.concat(idat), { maxOutputLength: rawLen });
   if (raw.length !== rawLen) throw new Error("PNG pixel data truncated");
   const pixels = unfilter(raw, height, rowBytes, bpp);
@@ -169,8 +164,8 @@ export function decodeBmp(bytes: Uint8Array): DecodedImage {
   if (bytes[0] !== 0x42 || bytes[1] !== 0x4d) throw new Error("not a BMP");
   const dataOff = bytes[10]! | (bytes[11]! << 8) | (bytes[12]! << 16) | (bytes[13]! << 24);
   const headerSize = bytes[14]! | (bytes[15]! << 8) | (bytes[16]! << 16) | (bytes[17]! << 24);
-  // BITMAPCOREHEADER (size 12) uses 2-byte dims and 3-byte palette entries —
-  // a layout this decoder does not implement. Reject rather than misparse.
+  // BITMAPCOREHEADER (size 12) uses 2-byte dims and 3-byte palette entries,
+  // a layout this decoder does not implement. Reject instead of misparsing.
   if (headerSize < 40) throw new Error("BMP core header not supported");
   const width = bytes[18]! | (bytes[19]! << 8) | (bytes[20]! << 16) | (bytes[21]! << 24);
   const heightRaw = bytes[22]! | (bytes[23]! << 8) | (bytes[24]! << 16) | (bytes[25]! << 24);
@@ -187,9 +182,8 @@ export function decodeBmp(bytes: Uint8Array): DecodedImage {
   const bottomUp = heightRaw > 0;
   const rowStride = Math.floor((width * bpp + 31) / 32) * 4;
 
-  // BITFIELDS masks: inside the header for V4+ (>=52 bytes), otherwise in the
-  // 12 bytes right after it. Masks are followed as declared, so both the
-  // common BGRA and RGBA byte orders decode correctly.
+  // BITFIELDS masks live in the header for V4+ (>=52 bytes), otherwise in the
+  // 12 bytes after it. Following the declared masks handles BGRA and RGBA.
   let bitFields: { r: number; g: number; b: number; a: number; rShift: number; gShift: number; bShift: number; aShift: number } | null = null;
   if (comp === 3) {
     const off = headerSize >= 52 ? 54 : 14 + headerSize;
@@ -199,8 +193,7 @@ export function decodeBmp(bytes: Uint8Array): DecodedImage {
     const gMask = readU32LE(bytes, off + 4);
     const bMask = readU32LE(bytes, off + 8);
     const aMask = headerSize >= 52 ? readU32LE(bytes, off + 12) : 0;
-    // Trailing zero count = position of the lowest set bit. Only masks that
-    // resolve to a full 8-bit channel are accepted.
+    // Position of the lowest set bit; only full 8-bit channels are accepted.
     const shift = (m: number): number => m === 0 ? 0 : 31 - Math.clz32(m & -m);
     const ok8 = (m: number): boolean => m !== 0 && ((m >>> shift(m)) === 0xff);
     if (!ok8(rMask) || !ok8(gMask) || !ok8(bMask)) {
@@ -209,8 +202,8 @@ export function decodeBmp(bytes: Uint8Array): DecodedImage {
     bitFields = { r: rMask, g: gMask, b: bMask, a: aMask, rShift: shift(rMask), gShift: shift(gMask), bShift: shift(bMask), aShift: shift(aMask) };
   }
 
-  // Palette entries live between the header and the pixel data, 4 bytes each
-  // (BGRA). biClrUsed (offset 46) may declare fewer than the bpp maximum.
+  // Palette entries sit between header and pixels, 4 bytes each. biClrUsed
+  // may declare fewer than the bpp maximum.
   let palette: Uint8Array | null = null;
   if (bpp <= 8) {
     const maxColors = bpp === 8 ? 256 : bpp === 4 ? 16 : 2;
@@ -221,9 +214,8 @@ export function decodeBmp(bytes: Uint8Array): DecodedImage {
     palette = bytes.subarray(pStart, pStart + count * 4);
   }
 
-  // Bounds BEFORE allocating: the header can declare dimensions far larger
-  // than the file holds, and reads past the end would silently decode as
-  // black pixels instead of failing.
+  // Bound before allocating: the header can declare more pixels than the file
+  // holds, and reads past the end would decode as silent black.
   if (!Number.isSafeInteger(width * height) || width * height > 64_000_000) {
     throw new Error(`BMP dimensions ${width}x${height} rejected`);
   }

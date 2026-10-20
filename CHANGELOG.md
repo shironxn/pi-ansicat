@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.8
+
+- The vision fallback now also covers images opened with pi's `read` tool. On
+  a text-only model, an image block in the read result is replaced by the same
+  labeled, machine-generated description used for pasted images, so reading a
+  screenshot or diagram works without switching models or delegating to a
+  vision agent. Image-capable models still receive the real image, and without
+  a `vision` block pi's built-in placeholder note is left untouched.
+- The `read` override keeps the user's `images.autoResize` setting and never
+  presents a describe error as a description; a failure leaves an explicit
+  "not available" notice instead.
+- Requires pi 1.3.0 or newer (the extension now uses the public
+  `createReadToolDefinition` and `getSettings` APIs).
+- README rewritten for clarity. Unused fields, a redundant MIME check, and
+  comment noise removed; file system and path imports are now static.
+
 ## 0.3.7
 
 - README: all prose em dashes rewritten (plain punctuation reads the same and

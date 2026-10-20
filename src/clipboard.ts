@@ -4,14 +4,6 @@ import type { ClipboardImage } from "./types.js";
 const READ_TIMEOUT_MS = 5000;
 const MAX_BUFFER_BYTES = 50 * 1024 * 1024;
 
-const SUPPORTED_MIME_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "image/bmp",
-]);
-
 function normalizeMimeType(raw: string): string {
   return raw.split(";")[0]?.trim().toLowerCase() ?? raw.toLowerCase();
 }
@@ -77,8 +69,5 @@ export async function readClipboardImage(): Promise<ClipboardImage | null> {
       : await run("xclip", ["-selection", "clipboard", "-t", mime, "-o"]);
 
   if (stdout.length === 0) return null;
-  if (SUPPORTED_MIME_TYPES.has(mime)) {
-    return { bytes: new Uint8Array(stdout), mimeType: mime };
-  }
-  return null;
+  return { bytes: new Uint8Array(stdout), mimeType: mime };
 }
