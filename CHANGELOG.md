@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- Declare `typebox` as a host-provided peer dependency (`*`) instead of a
+  bundled dependency, matching pi's extension loader and avoiding a duplicate
+  runtime module.
+
 ## 0.4.0
 
 - Added the `vision_ask` tool. Descriptions now carry `#N` image labels, so
