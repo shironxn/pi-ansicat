@@ -43,10 +43,12 @@ export function imageBlocks(content: readonly ReadBlock[]): ImageBlock[] {
 }
 
 // Replace image blocks in order and keep every other block. A missing or blank
-// description becomes an explicit "unavailable" notice, never error text.
+// description becomes an explicit "unavailable" notice, never error text,
+// unless the caller keeps failed images raw for a vision-capable main model.
 export function substituteReadImages(
   content: ReadBlock[],
   descriptions: readonly (string | undefined)[],
+  keepFailedImages = false,
 ): ReadBlock[] {
   if (!content.some((block) => block.type === "image")) return content;
   const hasDescription = descriptions.some((description) => (description?.trim().length ?? 0) > 0);
@@ -57,7 +59,12 @@ export function substituteReadImages(
       out.push(hasDescription ? { ...block, text: stripNonVisionNote(block.text) } : block);
       continue;
     }
-    out.push(descriptionBlock(descriptions[index++]));
+    const description = descriptions[index++];
+    if (keepFailedImages && (description?.trim().length ?? 0) === 0) {
+      out.push(block);
+      continue;
+    }
+    out.push(descriptionBlock(description));
   }
   return out;
 }

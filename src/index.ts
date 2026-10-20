@@ -252,6 +252,10 @@ function describeKey(base64: string): string {
   return createHash("sha256").update(base64).digest("hex");
 }
 
+function errorText(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 160);
+}
+
 // Both paste and read share the session cache, so an image is described once.
 async function describeCached(
   image: { data: string; mimeType: string },
@@ -275,34 +279,45 @@ function describeDeadline(signal: AbortSignal | undefined): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-// Replace read images with vision descriptions for text-only models. Without
-// a vision config, return pi's built-in placeholder result untouched.
-// When images are replaced, structuredContent is updated to match so codemode
-// callers also receive text instead of the original image block.
+// Describe read images with the configured vision model. Without a vision
+// config, leave the result untouched: image-capable models get the raw image
+// and text-only models keep pi's placeholder note. If describe fails on a
+// vision-capable main model, failed images stay raw while successful
+// descriptions still replace theirs.
 async function readWithVisionFallback<TDetails>(
   result: AgentToolResult<TDetails>,
   ctx: ExtensionContext,
   signal: AbortSignal | undefined,
 ): Promise<AgentToolResult<TDetails>> {
-  if (!ctx.model || modelSupportsImages(ctx)) return result;
+  if (!ctx.model) return result;
   const content = result.content as ReadBlock[];
   const images = imageBlocks(content);
   if (images.length === 0) return result;
   const cfg = loadVisionConfig();
   if (!cfg) return result;
   const descriptions: (string | undefined)[] = [];
+  let failed = false;
   for (const image of images) {
     if (ctx.hasUI) ctx.ui.notify(`ansicat: describing read image via ${cfg.provider}/${cfg.model}...`, "info");
     try {
-      descriptions.push(await describeCached(image, ctx, cfg, describeDeadline(signal)));
+      const description = await describeCached(image, ctx, cfg, describeDeadline(signal));
+      descriptions.push(description);
+      if (!description) {
+        failed = true;
+        if (ctx.hasUI) ctx.ui.notify(`ansicat: vision describe failed via ${cfg.provider}/${cfg.model}: model returned an empty reply`, "warning");
+      }
     } catch (error) {
       if (signal?.aborted) throw error;
       // The reason is a user notice, never model-facing content.
       descriptions.push(undefined);
-      if (ctx.hasUI) ctx.ui.notify(`ansicat: could not describe the read image (${error instanceof Error ? error.message.slice(0, 160) : String(error)})`, "warning");
+      failed = true;
+      if (ctx.hasUI) ctx.ui.notify(`ansicat: vision describe failed via ${cfg.provider}/${cfg.model}: ${errorText(error)}`, "warning");
     }
   }
-  const replaced = substituteReadImages(content, descriptions);
+  const keepFailed = failed && modelSupportsImages(ctx);
+  if (keepFailed && ctx.hasUI) ctx.ui.notify("ansicat: keeping the original image for descriptions that failed", "info");
+  const replaced = substituteReadImages(content, descriptions, keepFailed);
+  if (replaced.some((block) => block.type === "image")) return { ...result, content: replaced };
   const structuredContent = replaced
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("\n");
@@ -335,7 +350,7 @@ interface PreviewDetails { title?: string; art?: string[]; note?: string; }
 export function registerAnsiCat(pi: ExtensionAPI): void {
   _pi = pi;
   // Registered under the built-in name, which pi lets an extension override.
-  // Renderers, schema, and structuredContent stay inherited from the base.
+  // Renderers and schema stay inherited from the base; execute replaces content.
   const baseRead = createReadToolDefinition(process.cwd());
   pi.registerTool({
     ...baseRead,
@@ -383,37 +398,49 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
     _widgetItems = [];
     if (imagesToAttach.length === 0) return { action: "continue" as const };
     let text = event.text;
-    if (!modelSupportsImages(ctx)) {
-      const cfg = loadVisionConfig();
-      if (cfg) {
-        // Keep failures apart from descriptions so an API error never reads
-        // like evidence about the image.
-        const notes: string[] = [];
-        const failures: string[] = [];
-        for (const img of imagesToAttach) {
-          const key = describeKey(img.base64);
-          const hit = _describeCache.get(key);
-          if (hit) { notes.push(hit); continue; }
-          ctx.ui.notify(`ansicat: describing image via ${cfg.provider}/${cfg.model}...`, "info");
-          try {
-            const desc = await describeCached({ data: img.base64, mimeType: img.mimeType }, ctx, cfg, AbortSignal.timeout(DESCRIBE_TIMEOUT_MS));
-            if (desc) notes.push(desc); else failures.push("no description returned");
-          }
-          catch (err) { failures.push(err instanceof Error ? err.message.slice(0, 160) : String(err)); }
+    const cfg = loadVisionConfig();
+    if (cfg) {
+      // An API error must never read like evidence about the image.
+      const notes: { index: number; text: string }[] = [];
+      const failures: string[] = [];
+      const failedImages: PendingImageEx[] = [];
+      for (const [index, img] of imagesToAttach.entries()) {
+        const key = describeKey(img.base64);
+        const hit = _describeCache.get(key);
+        if (hit) { notes.push({ index: index + 1, text: hit }); continue; }
+        ctx.ui.notify(`ansicat: describing image via ${cfg.provider}/${cfg.model}...`, "info");
+        try {
+          const desc = await describeCached({ data: img.base64, mimeType: img.mimeType }, ctx, cfg, describeDeadline(ctx.signal));
+          if (desc) notes.push({ index: index + 1, text: desc });
+          else { failures.push("model returned an empty reply"); failedImages.push(img); }
         }
-        if (notes.length > 0) text = `${event.text}\n\n${visionEvidenceLabel("you pasted")}\n${notes.map((n, i) => `[image ${i + 1}] ${truncateDescription(n)}`).join("\n")}`;
-        if (failures.length > 0) {
+        catch (err) {
+          if (ctx.signal?.aborted) throw err;
+          failures.push(errorText(err)); failedImages.push(img);
+        }
+      }
+      if (notes.length > 0) text = `${event.text}\n\n${visionEvidenceLabel("you pasted")}\n${notes.map((n) => `[image ${n.index}] ${truncateDescription(n.text)}`).join("\n")}`;
+      const supportsImages = modelSupportsImages(ctx);
+      const fallbackImages = supportsImages ? failedImages.map((img) => ({ type: "image" as const, data: img.base64, mimeType: img.mimeType })) : [];
+      if (failures.length > 0) {
+        const reason = failures.join("; ");
+        if (supportsImages) {
+          ctx.ui.notify(`ansicat: vision describe failed via ${cfg.provider}/${cfg.model}: ${reason}; sending the original image`, "warning");
+        } else {
           // Say the image is unavailable instead of letting the model guess.
-          const reason = failures.join("; ");
           if (notes.length === 0) {
             text = `${event.text}\n\n[ansicat: the pasted image could not be described and is NOT available to you. Do not guess its contents. Reason: ${reason}]`;
           } else {
             text += `\n[ansicat: ${failures.length} further image(s) could not be described and are NOT available to you. Reason: ${reason}]`;
           }
-          ctx.ui.notify(`ansicat: image description failed (${reason})`, "warning");
+          ctx.ui.notify(`ansicat: vision describe failed via ${cfg.provider}/${cfg.model}: ${reason}`, "warning");
         }
-      } else { ctx.ui.notify("ansicat: text-only model and no vision config; image dropped (add a vision block to ansicat.json to describe it)", "warning"); }
+      }
       // Descriptions replace only ansicat's images; caller-attached images pass through.
+      return { action: "transform" as const, text, images: [...(event.images ?? []), ...fallbackImages] };
+    }
+    if (!modelSupportsImages(ctx)) {
+      ctx.ui.notify("ansicat: text-only model and no vision config; image dropped (add a vision block to ansicat.json to describe it)", "warning");
       return { action: "transform" as const, text, images: event.images ?? [] };
     }
     return { action: "transform" as const, text, images: [...(event.images ?? []), ...imagesToAttach.map((img) => ({ type: "image" as const, data: img.base64, mimeType: img.mimeType }))] };

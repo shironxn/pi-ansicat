@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.9
+
+- Rewrote the default describe prompt. It now opens with a one-line summary,
+  then reports exact OCR, layout, visuals, and a separate uncertainty section.
+  Unreadable or occluded text is marked `[?]` instead of guessed, code and
+  tables keep their line breaks, charts mark estimates, and image text is
+  treated as data. Identification covers public figures, characters, titles,
+  brands, and artwork without guessing private individuals. Your typed
+  prompt is not sent to the vision model; only the image and this prompt are.
+- The image now precedes the prompt text in the vision request. Anthropic and
+  Microsoft both document that order as the better default for single-image
+  prompts.
+- Describe failures now name the configured provider/model in the notice, and
+  the README documents that `vision.prompt` replaces the default entirely.
+- A `vision` block now takes precedence: when configured, every image is
+  described, even on a model that supports images. Without a block, images go
+  to the main model untouched. If describe fails on a vision-capable main
+  model, the original image is sent instead of an unavailable notice.
+
 ## 0.3.8
 
 - The vision fallback now also covers images opened with pi's `read` tool. On

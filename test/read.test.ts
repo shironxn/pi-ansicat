@@ -64,6 +64,18 @@ test("multiple images keep their order and surrounding text", () => {
   );
 });
 
+test("failed images stay raw when the caller keeps them", () => {
+  const out = substituteReadImages(
+    [IMAGE, { type: "text", text: "between" }, OTHER_IMAGE],
+    ["first description", undefined],
+    true,
+  );
+
+  assert.match(textOf(out[0]), /first description/);
+  assert.equal(textOf(out[1]), "between");
+  assert.deepEqual(out[2], OTHER_IMAGE);
+});
+
 test("a missing description is an unavailability notice, not a description", () => {
   const out = substituteReadImages([IMAGE], [undefined]);
   const text = textOf(out[0]);
