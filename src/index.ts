@@ -3,18 +3,22 @@ import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from
 import { readFile } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 
-import { createReadToolDefinition, resizeImage, type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createReadToolDefinition, defineTool, resizeImage, type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
 
 import { renderHalfBlocks } from "./art.js";
+import { descriptionCacheKey, descriptionCachePath, readCachedDescription, writeCachedDescription } from "./cache.js";
 import { agentDir, ansicatConfigPaths } from "./config.js";
 import { readClipboardImage } from "./clipboard.js";
 import { toPngForPreview } from "./convert.js";
 import { decodeImage } from "./decode.js";
-import { imageBlocks, substituteReadImages, truncateDescription, visionEvidenceLabel, type ReadBlock } from "./read.js";
+import { ImageStore } from "./images.js";
+import { imageBlocks, substituteReadImages, truncateDescription, visionAnswerLabel, visionEvidenceLabel, type ReadBlock } from "./read.js";
 import type { ImageMarker, PendingImage } from "./types.js";
-import { describeImage, loadVisionConfig, modelSupportsImages, type VisionConfig } from "./vision.js";
+import { isTruncatedReply } from "./refusal.js";
+import { describeImage, describePrompt, loadVisionConfig, modelSupportsImages, type VisionConfig } from "./vision.js";
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const PREVIEW_TYPE = "pi-ansicat-preview";
@@ -236,8 +240,9 @@ let _ctx: ExtensionContext | null = null;
 let _queue: ImageQueue | null = null;
 let _pasting = false;
 const _describeCache = new Map<string, string>();
-// Capped entry count; entries are small (image-hash key + description text).
-const MAX_DESCRIBE_CACHE_ENTRIES = 20;
+const _images = new ImageStore();
+// Capped entry count; entries are small (composite key + description text).
+const MAX_DESCRIBE_CACHE_ENTRIES = 32;
 
 function cacheDescription(key: string, desc: string): void {
   // Drop the oldest entry when full: Map iterates in insertion order.
@@ -252,25 +257,67 @@ function describeKey(base64: string): string {
   return createHash("sha256").update(base64).digest("hex");
 }
 
+function descriptionKey(cfg: VisionConfig, base64: string): string {
+  return descriptionCacheKey(describeKey(base64), cfg.provider, cfg.model, describePrompt(cfg), cfg.maxTokens);
+}
+
+function cachedDescription(cfg: VisionConfig, key: string): string | undefined {
+  const hit = _describeCache.get(key);
+  if (hit) return hit;
+  if (cfg.cache !== "disk") return undefined;
+  const disk = readCachedDescription(descriptionCachePath(agentDir()), key);
+  if (!disk || isTruncatedReply(disk)) return undefined;
+  cacheDescription(key, disk);
+  return disk;
+}
+
+async function describeResized(
+  image: { data: string; mimeType: string },
+  ctx: ExtensionContext,
+  cfg: VisionConfig,
+  signal?: AbortSignal,
+  options?: { question?: string },
+): Promise<string | undefined> {
+  // Large uploads and image tokens dominate latency; let pi shrink it first.
+  const small = await resizeImage(new Uint8Array(Buffer.from(image.data, "base64")), image.mimeType, { maxWidth: 1568, maxHeight: 1568 }).catch(() => null);
+  return describeImage(small?.data ?? image.data, small?.mimeType ?? image.mimeType, ctx, cfg, signal, options);
+}
+
 function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 160);
 }
 
+function visionAskError(text: string): AgentToolResult<Record<string, never>> {
+  return { content: [{ type: "text", text: `[ansicat: ${text}]` }], details: {}, isError: true };
+}
+
 // Both paste and read share the session cache, so an image is described once.
+// Truncated replies are usable but not cached: the next attempt can do better.
+async function describeUncached(
+  image: { data: string; mimeType: string },
+  ctx: ExtensionContext,
+  cfg: VisionConfig,
+  key: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  const desc = await describeResized(image, ctx, cfg, signal);
+  if (desc && !isTruncatedReply(desc)) {
+    cacheDescription(key, desc);
+    if (cfg.cache === "disk") {
+      try { writeCachedDescription(descriptionCachePath(agentDir()), key, desc); } catch { /* cache is best effort */ }
+    }
+  }
+  return desc;
+}
+
 async function describeCached(
   image: { data: string; mimeType: string },
   ctx: ExtensionContext,
   cfg: VisionConfig,
   signal?: AbortSignal,
 ): Promise<string | undefined> {
-  const key = describeKey(image.data);
-  const hit = _describeCache.get(key);
-  if (hit) return hit;
-  // Large uploads and image tokens dominate latency; let pi shrink it first.
-  const small = await resizeImage(new Uint8Array(Buffer.from(image.data, "base64")), image.mimeType, { maxWidth: 1568, maxHeight: 1568 }).catch(() => null);
-  const desc = await describeImage(small?.data ?? image.data, small?.mimeType ?? image.mimeType, ctx, cfg, signal);
-  if (desc) cacheDescription(key, desc);
-  return desc;
+  const key = descriptionKey(cfg, image.data);
+  return cachedDescription(cfg, key) ?? describeUncached(image, ctx, cfg, key, signal);
 }
 
 // Honor the agent abort and still cap a stalled provider.
@@ -296,8 +343,10 @@ async function readWithVisionFallback<TDetails>(
   const cfg = loadVisionConfig();
   if (!cfg) return result;
   const descriptions: (string | undefined)[] = [];
+  const ids: number[] = [];
   let failed = false;
   for (const image of images) {
+    ids.push(_images.add(image.data, image.mimeType));
     if (ctx.hasUI) ctx.ui.notify(`ansicat: describing read image via ${cfg.provider}/${cfg.model}...`, "info");
     try {
       const description = await describeCached(image, ctx, cfg, describeDeadline(signal));
@@ -316,7 +365,7 @@ async function readWithVisionFallback<TDetails>(
   }
   const keepFailed = failed && modelSupportsImages(ctx);
   if (keepFailed && ctx.hasUI) ctx.ui.notify("ansicat: keeping the original image for descriptions that failed", "info");
-  const replaced = substituteReadImages(content, descriptions, keepFailed);
+  const replaced = substituteReadImages(content, descriptions, keepFailed, ids);
   if (replaced.some((block) => block.type === "image")) return { ...result, content: replaced };
   const structuredContent = replaced
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
@@ -362,6 +411,47 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
       return readWithVisionFallback(result, ctx, signal);
     },
   });
+  if (loadVisionConfig()) {
+    pi.registerTool(defineTool({
+      name: "vision_ask",
+      label: "Vision Ask",
+      description:
+        "Ask a specific question about an image already described in this session. Use it for exact error text, a chart value, or a UI detail the description missed. Pass the full number after `#` from the label (for example `5704357`), or omit it for the most recent image.",
+      promptSnippet: "Ask a targeted question about an image described earlier in this session",
+      parameters: Type.Object({
+        question: Type.String({ description: "Specific question to answer from the image." }),
+        image: Type.Optional(
+          Type.Integer({ minimum: 1, description: "Image number from an ansicat description label. Defaults to the most recent image." }),
+        ),
+      }),
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+        const question = params.question.trim();
+        if (!question) return visionAskError("vision_ask needs a non-empty question");
+        const cfg = loadVisionConfig();
+        if (!cfg) return visionAskError("vision_ask needs a vision block in ansicat.json");
+        const image = params.image === undefined ? _images.latest() : _images.get(params.image);
+        if (!image) {
+          return visionAskError(
+            params.image === undefined
+              ? "no image is available in this session; paste or read one first"
+              : `image #${params.image} is not available in this session`,
+          );
+        }
+        if (ctx.hasUI) ctx.ui.notify(`ansicat: asking vision via ${cfg.provider}/${cfg.model}...`, "info");
+        try {
+          const answer = await describeResized(image, ctx, cfg, describeDeadline(signal), { question });
+          if (!answer) return visionAskError("vision model returned an empty reply");
+          return {
+            content: [{ type: "text" as const, text: `${visionAnswerLabel(image.id)}\n${truncateDescription(answer)}` }],
+            details: {},
+          };
+        } catch (err) {
+          if (signal?.aborted) throw err;
+          return visionAskError(`vision ask failed via ${cfg.provider}/${cfg.model}: ${errorText(err)}`);
+        }
+      },
+    }));
+  }
   // An entry renders in the TUI but never enters the LLM context (a custom
   // message would be serialized as a user message).
   pi.registerEntryRenderer<PreviewDetails>(PREVIEW_TYPE, (entry, _options, theme) => {
@@ -401,17 +491,18 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
     const cfg = loadVisionConfig();
     if (cfg) {
       // An API error must never read like evidence about the image.
-      const notes: { index: number; text: string }[] = [];
+      const notes: { id: number; text: string }[] = [];
       const failures: string[] = [];
       const failedImages: PendingImageEx[] = [];
-      for (const [index, img] of imagesToAttach.entries()) {
-        const key = describeKey(img.base64);
-        const hit = _describeCache.get(key);
-        if (hit) { notes.push({ index: index + 1, text: hit }); continue; }
+      for (const img of imagesToAttach) {
+        const id = _images.add(img.base64, img.mimeType);
+        const key = descriptionKey(cfg, img.base64);
+        const hit = cachedDescription(cfg, key);
+        if (hit) { notes.push({ id, text: hit }); continue; }
         ctx.ui.notify(`ansicat: describing image via ${cfg.provider}/${cfg.model}...`, "info");
         try {
-          const desc = await describeCached({ data: img.base64, mimeType: img.mimeType }, ctx, cfg, describeDeadline(ctx.signal));
-          if (desc) notes.push({ index: index + 1, text: desc });
+          const desc = await describeUncached({ data: img.base64, mimeType: img.mimeType }, ctx, cfg, key, describeDeadline(ctx.signal));
+          if (desc) notes.push({ id, text: desc });
           else { failures.push("model returned an empty reply"); failedImages.push(img); }
         }
         catch (err) {
@@ -419,7 +510,7 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
           failures.push(errorText(err)); failedImages.push(img);
         }
       }
-      if (notes.length > 0) text = `${event.text}\n\n${visionEvidenceLabel("you pasted")}\n${notes.map((n) => `[image ${n.index}] ${truncateDescription(n.text)}`).join("\n")}`;
+      if (notes.length > 0) text = `${event.text}\n\n${visionEvidenceLabel("you pasted")}\n${notes.map((n) => `[image #${n.id}] ${truncateDescription(n.text)}`).join("\n")}`;
       const supportsImages = modelSupportsImages(ctx);
       const fallbackImages = supportsImages ? failedImages.map((img) => ({ type: "image" as const, data: img.base64, mimeType: img.mimeType })) : [];
       if (failures.length > 0) {
@@ -502,6 +593,8 @@ export default function (pi: ExtensionAPI): void {
     _ctx = ctx;
     _queue = createImageQueue();
     _config = loadConfig();
+    _images.clear();
+    _describeCache.clear();
     // A fresh session must not inherit the previous session's live preview.
     if (_previewWidgetActive || _widgetItems.length) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
     _widgetItems = [];
@@ -552,6 +645,6 @@ export default function (pi: ExtensionAPI): void {
     if (_previewWidgetActive) { _ctx?.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
     _widgetItems = [];
     if (_unsubTerminalInput) { _unsubTerminalInput(); _unsubTerminalInput = null; }
-    _ctx = null; _queue = null; _pasting = false; _describeCache.clear();
+    _ctx = null; _queue = null; _pasting = false; _describeCache.clear(); _images.clear();
   });
 }

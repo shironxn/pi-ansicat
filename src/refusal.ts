@@ -10,6 +10,14 @@ const BARE_REFUSAL = /\bcannot view images?\b|\bcan'?t view images?\b/i;
 const BARE_REFUSAL_MAX_CHARS = 160;
 const REFUSAL_MAX_CHARS = 400;
 
+// A follow-up answer can legitimately say "I can't read the last digit" or
+// quote an error like "can't view images in this mode". For ask, a refusal
+// must be a whole first-person statement about the image, not a substring.
+const IMAGE_REFUSAL =
+  /^(?:(?:i|we)\b[^.\n]{0,60}?(?:cannot|can'?t|unable to)\s+(?:view|see|access|interpret|read)\s+(?:the|this|that|an?|any)?\s*images?(?:\s+(?:provided|attached|included|received|here|in (?:your|the) message))?\s*[.!?]?\s*|still\s+cannot\s+view\s+images?\s*[.!?]?\s*|(?:i(?:'m| am)\s+(?:just\s+)?an?\s*text[- ]only|as a text[- ]only\s+(?:assistant|model|llm))\b[^\n]{0,80}(?:cannot|can'?t|unable)[^\n]*)$/i;
+
+export const TRUNCATION_MARK = "[ansicat: reply truncated";
+
 const REFUSAL_NUDGE =
   "You are shown an image and you can see it. Describe what the image actually shows. Do not reply that " +
   "you cannot view images or that you are text-only. ";
@@ -19,6 +27,14 @@ export function isRefusal(text: string): boolean {
   const head = text.slice(0, 200);
   if (REFUSAL_HEAD.test(head) && !BARE_REFUSAL.test(head)) return true;
   return text.length < BARE_REFUSAL_MAX_CHARS && BARE_REFUSAL.test(head);
+}
+
+export function isImageRefusal(text: string): boolean {
+  return text.length < REFUSAL_MAX_CHARS && IMAGE_REFUSAL.test(text.slice(0, 200));
+}
+
+export function isTruncatedReply(text: string): boolean {
+  return text.includes(TRUNCATION_MARK);
 }
 
 // pi defaults a model's input to ["text"] when a provider declares no image
@@ -41,7 +57,7 @@ export function interpretReply(reply: {
   if (reply.stopReason === "length") {
     // Keep the useful opening but mark the cut: the missing tail often holds OCR.
     // Do not advise raising maxTokens; the cap was already relaxed or is the model's own.
-    return `${out}\n[ansicat: description truncated at the model's output limit; detail may be missing]`;
+    return `${out}\n${TRUNCATION_MARK} at the model's output limit; detail may be missing]`;
   }
   return out;
 }
@@ -60,11 +76,13 @@ export function pickReply<T extends { stopReason: string; text: string }>(a: T, 
 export async function resolveDescription(
   run: (prompt: string) => Promise<string | undefined>,
   prompt: string,
+  nudge = REFUSAL_NUDGE,
+  check: (text: string) => boolean = isRefusal,
 ): Promise<string | undefined> {
   const first = await run(prompt);
   if (!first) return undefined;
-  if (!isRefusal(first)) return first;
-  const second = await run(REFUSAL_NUDGE + prompt);
-  if (second && !isRefusal(second)) return second;
-  throw new Error("vision model refused to describe the image (it reported it cannot view images)");
+  if (!check(first)) return first;
+  const second = await run(nudge + prompt);
+  if (second && !check(second)) return second;
+  throw new Error("vision model refused to view the image (it reported it cannot view images)");
 }

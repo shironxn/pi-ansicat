@@ -6,6 +6,7 @@ import {
   MAX_DESCRIPTION_CHARS,
   substituteReadImages,
   truncateDescription,
+  visionAnswerLabel,
   visionEvidenceLabel,
   type ImageBlock,
   type ReadBlock,
@@ -74,6 +75,14 @@ test("failed images stay raw when the caller keeps them", () => {
   assert.match(textOf(out[0]), /first description/);
   assert.equal(textOf(out[1]), "between");
   assert.deepEqual(out[2], OTHER_IMAGE);
+});
+
+test("description labels carry the image id used by vision_ask", () => {
+  const out = substituteReadImages([IMAGE], ["first description"], false, [7]);
+
+  assert.match(textOf(out[0]), /vision description #7/);
+  assert.match(textOf(out[0]), /this image/);
+  assert.match(visionAnswerLabel(7), /image #7/);
 });
 
 test("a missing description is an unavailability notice, not a description", () => {

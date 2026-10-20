@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0
+
+- Added the `vision_ask` tool. Descriptions now carry `#N` image labels, so
+  the main model can ask one targeted follow-up and get only the answer back.
+- Added opt-in disk caching with `vision.cache: "disk"`. Entries are keyed by
+  image, provider/model, prompt, and output cap, capped at 200 entries, and
+  written with mode 0600.
+- Vision calls now send `maxTokens` and temperature 0 (non-reasoning models) in
+  the provider options, where they are actually read. Previously both were
+  placed in the request context and silently ignored. Reasoning models keep
+  their provider default.
+- Truncated descriptions are no longer cached, so the next request can produce
+  a complete one.
+- Added an eval harness with code, table, chart, UI error, and photo fixtures.
+
 ## 0.3.9
 
 - Rewrote the default describe prompt. It now opens with a one-line summary,

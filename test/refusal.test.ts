@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { inputSupportsImages, isRefusal, interpretReply, pickReply, resolveDescription } from "../src/refusal.ts";
+import { inputSupportsImages, isImageRefusal, isRefusal, isTruncatedReply, interpretReply, pickReply, resolveDescription } from "../src/refusal.ts";
 
 // Vision models sometimes answer with a refusal instead of a description.
 // These are the exact phrasings observed from real vision models.
@@ -31,6 +31,31 @@ const DESCRIPTIONS = [
 
 test("refusals are detected", () => {
   for (const text of REFUSALS) assert.equal(isRefusal(text), true, text);
+});
+
+test("a short answer about an unreadable detail is not an image refusal", () => {
+  assert.equal(isImageRefusal("I can't read the last digit."), false);
+  assert.equal(isImageRefusal("I can't see the image's last digit."), false);
+  assert.equal(isImageRefusal("I cannot read the image text on the last line."), false);
+  assert.equal(isImageRefusal("Error: can't view images in this mode."), false);
+  assert.equal(isImageRefusal("I can't view images in this mode."), false);
+  assert.equal(isImageRefusal("I cannot view the image, but the text says hello."), false);
+  assert.equal(isImageRefusal("I cannot view images.\nA red square on white."), false);
+  assert.equal(isRefusal("I can't read the last digit."), true);
+});
+
+test("the strict check still catches whole image refusals", () => {
+  const strict = [
+    "I am a text-only assistant and cannot view images.",
+    "I cannot see the image provided.",
+    "I'm unable to view images.",
+    "As a text-only model, I can't interpret images.",
+    "Still cannot view images.",
+    "I cannot view images.",
+    "I can't read the image.",
+  ];
+  for (const text of strict) assert.equal(isImageRefusal(text), true, text);
+  assert.equal(isImageRefusal("The image shows a bar chart."), false);
 });
 
 test("descriptions are not mistaken for refusals", () => {
@@ -69,6 +94,28 @@ test("a normal first answer is not retried", async () => {
   assert.equal(calls, 1);
 });
 
+test("a legitimate short answer is not retried by the strict check", async () => {
+  const calls: string[] = [];
+  const run = async (prompt: string) => {
+    calls.push(prompt);
+    return calls.length === 1 ? "I can't read the last digit." : "42";
+  };
+  const out = await resolveDescription(run, "What is the digit?", "nudge ", isImageRefusal);
+  assert.equal(out, "I can't read the last digit.");
+  assert.equal(calls.length, 1);
+});
+
+test("a strict image refusal is retried with the nudge", async () => {
+  const calls: string[] = [];
+  const run = async (prompt: string) => {
+    calls.push(prompt);
+    return calls.length === 1 ? "I cannot view the image." : "42";
+  };
+  const out = await resolveDescription(run, "What is the digit?", "nudge ", isImageRefusal);
+  assert.equal(out, "42");
+  assert.deepEqual(calls, ["What is the digit?", "nudge What is the digit?"]);
+});
+
 // An empty reply is a provider-level failure, not a refusal: a nudge will not
 // fix it, so it must not trigger a second call.
 test("an empty reply is returned as undefined without a retry", async () => {
@@ -94,6 +141,8 @@ test("a truncated reply is kept and marked", () => {
   const out = interpretReply({ stopReason: "length", text: "Rust error dialog. error[E0308]" });
   assert.ok(out?.startsWith("Rust error dialog."));
   assert.match(out ?? "", /truncated at the model's output limit/);
+  assert.equal(isTruncatedReply(out ?? ""), true);
+  assert.equal(isTruncatedReply("a complete reply"), false);
 });
 
 test("an errored reply throws with its message", () => {

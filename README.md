@@ -22,6 +22,10 @@ files opened with the `read` tool.
 - When a `vision` block is configured, images are described first and the
   description is labeled as machine-generated evidence, for pasted images and
   `read` results.
+- `vision_ask` answers a targeted question about an image already described in
+  the session, using its `#N` label.
+- Descriptions are cached in memory per session. Set `vision.cache: "disk"` to
+  keep them across sessions.
 - Without a `vision` block, image-capable models receive the real image
   unchanged; text-only models fall back to pi's built-in behavior.
 
@@ -88,6 +92,9 @@ How it behaves:
 
 - **Pasted image:** the description is appended to your prompt.
 - **`read` result:** the image block is replaced by the description.
+- **Follow-up:** each description carries an image number (`#N`). Ask
+  `vision_ask` with that number, or omit it for the most recent image, when you
+  need exact text, a chart value, or a UI detail the description missed.
 - **No `vision` block:** the real image is sent to an image-capable main model;
   a text-only main model gets pi's placeholder note.
 - **Refusal:** if the vision model says it cannot view images, pi-ansicat
@@ -98,14 +105,14 @@ How it behaves:
   description. If the main model supports images, the original image is sent
   instead; otherwise the model sees an explicit "not available" notice.
 
-Descriptions are cached per session. The same image is not described twice.
-They are labeled machine-generated evidence, and OCR text inside them is
-treated as untrusted data.
+Descriptions are labeled machine-generated evidence, and OCR text inside them
+is treated as untrusted data.
 
-Your typed prompt is not sent to the vision model. It receives only the image
-and the describe prompt. The main model gets your prompt plus the description,
-so the description stays reusable and your text does not reach the vision
-provider.
+Your typed prompt is not sent to the generic describe call. It receives only
+the image and the describe prompt. The main model gets your prompt plus the
+description, so the description stays reusable and your text does not reach the
+vision provider. `vision_ask` sends only the question the main model asks about
+an image.
 
 ## Config
 
@@ -120,7 +127,8 @@ still read. Every key is optional:
     "provider": "openai",
     "model": "gpt-4o-mini",
     "prompt": "optional custom prompt",
-    "maxTokens": 800
+    "maxTokens": 800,
+    "cache": "session"
   }
 }
 ```
@@ -132,10 +140,19 @@ still read. Every key is optional:
 - `vision.prompt`: replaces the built-in describe prompt entirely. The
   default covers a summary, exact OCR, layout, visuals, and uncertainty; a
   short custom prompt loses those rules. Copy the default from
-  `src/vision.ts` if you need a different output format.
+  `src/vision.ts` if you need a different output format. It applies to describe
+  calls; `vision_ask` keeps its own answer rules. The prompt is sent as the user
+  message, so it works with providers that ignore system prompts.
 - `vision.maxTokens`: caps the reply. Leave it unset unless you have a reason.
   Reasoning models spend the cap before writing anything. If a capped reply is
   cut off, pi-ansicat retries once without the cap.
+- `vision.cache`: `"session"` (default) keeps descriptions in memory.
+  `"disk"` also stores them in `~/.pi/agent/cache/ansicat-descriptions.json`
+  with mode 0600, keyed by image, model, prompt, and output cap. Disk entries
+  can contain OCR text, so keep the default for sensitive screenshots. The key
+  uses the configured provider/model, so a router that swaps its underlying
+  model can reuse an older description. Concurrent pi processes merge on write;
+  a simultaneous write can still win last.
 
 ## Privacy
 
@@ -145,6 +162,10 @@ through pi's own auth, so credentials never pass through this package.
 
 A submitted preview is stored in pi's session file as text and ANSI art. The
 image bytes are not written to disk. Previews never enter the model's context.
+
+Descriptions stay in memory by default. With `vision.cache: "disk"`, they are
+also written to the agent cache directory with mode 0600. That file can contain
+screenshot text, so leave the default in place for sensitive material.
 
 ## Troubleshooting
 
@@ -164,6 +185,8 @@ image bytes are not written to disk. Previews never enter the model's context.
   original is sent instead.
 - **`vision model not found in pi's registry`.** The `provider`/`model` pair in
   `ansicat.json` does not match a model pi knows. Check `pi --list-models`.
+- **`vision_ask` says no image is available.** The image was not pasted or read
+  in this session, or its entry was evicted. Paste or read it again.
 - **"text-only model and no vision config."** Add the `vision` block above.
 
 ## License
