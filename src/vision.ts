@@ -1,18 +1,11 @@
 import { readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { ansicatConfigPaths } from "./config.js";
+import { ansicatConfigPaths, normalizeVisionSettings, type VisionSettings } from "./config.js";
 import { inputSupportsImages, isImageRefusal, interpretReply, pickReply, resolveDescription } from "./refusal.js";
 import { buildVisionCall } from "./vision-request.js";
 
-export interface VisionConfig {
-  provider: string;
-  model: string;
-  prompt?: string;
-  maxTokens?: number;
-  /** `disk` survives sessions; the default keeps descriptions in memory only. */
-  cache?: "session" | "disk";
-}
+export type VisionConfig = VisionSettings;
 
 // Image first, then text: Anthropic and Microsoft both recommend that order
 // for single-image prompts. The structure keeps OCR and layout usable by a
@@ -49,12 +42,9 @@ export function describePrompt(cfg: VisionConfig): string {
 export function loadVisionConfig(): VisionConfig | undefined {
   for (const p of ansicatConfigPaths()) {
     try {
-      const raw = JSON.parse(readFileSync(p, "utf8")) as { vision?: VisionConfig };
-      if (raw.vision?.provider && raw.vision?.model) {
-        // Accept only the documented value; a typo must not silently enable
-        // disk writes of screenshot text.
-        return { ...raw.vision, cache: raw.vision.cache === "disk" ? "disk" : undefined };
-      }
+      const raw = JSON.parse(readFileSync(p, "utf8")) as { vision?: unknown };
+      const vision = normalizeVisionSettings(raw.vision);
+      if (vision) return vision;
     } catch { /* next path */ }
   }
   return undefined;

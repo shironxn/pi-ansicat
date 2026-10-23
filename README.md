@@ -15,6 +15,8 @@ files opened with the `read` tool.
 
 - `Ctrl+V` pastes a clipboard image, inserts an `[Image #N]` marker, and shows
   an ANSI preview above the editor.
+- When the clipboard holds no image, `Ctrl+V` pastes text or copied file paths,
+  so the key keeps working for normal pastes.
 - On submit, the preview moves into the chat transcript and scrolls with it.
 - Skip a paste by deleting its marker before submit. The image is not sent.
 - PNG and BMP decode without extra dependencies.
@@ -39,28 +41,29 @@ files opened with the `read` tool.
 pi install npm:pi-ansicat
 ```
 
-Run `/reload`, then accept the prompt that unbinds pi's built-in image paste
-from `Ctrl+V`. The original `keybindings.json` is backed up next to it. To do it
-by hand:
-
-```json
-{ "app.clipboard.pasteImage": [] }
-```
+Run `/reload`. On Linux the extension takes over `Ctrl+V` and leaves pi's
+`keybindings.json` alone. On other platforms it does not register the paste
+keys, so the built-in paste keeps working.
 
 ## Requirements
 
 - pi 1.3.0 or newer.
-- Linux. Wayland needs `wl-clipboard`, X11 needs `xclip`.
+- Linux for clipboard paste. Wayland needs `wl-clipboard`, X11 needs `xclip`
+  (or `xsel` for text). The `vision` fallback works on any platform.
 - Optional: ImageMagick (`magick` or `convert`) or `ffmpeg` for JPEG, WebP, and
   GIF previews. Without one, those formats still attach, just without a preview.
 
 ## Use
 
-Paste with `Ctrl+V`. `Alt+V` and `Ctrl+Alt+V` also work.
+Paste with `Ctrl+V`. `Alt+V` and `Ctrl+Alt+V` also work. When the clipboard
+has no image, the same keys paste text or copied file paths.
 
 The `[Image #N]` marker is what attaches the image. Delete the marker before
-submit to skip that paste. Keep it to send the image, and the preview moves into
-the transcript above your message.
+submit to skip that paste (and free its image); pending previews are capped at
+64 MB. Keep it to send the image, and the preview moves into
+the transcript above your message. With a `vision` block the marker stays in
+the editor only: it is removed before the prompt is sent, because each
+description carries its own `#N` number.
 
 Preview or resize outside the clipboard flow:
 
@@ -135,6 +138,13 @@ still read. Every key is optional:
 
 - `cols`: preview width, clamped to 20-120.
 - `maxLines`: preview height, clamped to 4-40.
+- `cols` and `maxLines` load at session start; run `/reload` after editing
+  `ansicat.json` (or use `/ansicat cols=<n> maxLines=<n>`). A new `vision`
+  block applies to the next paste, but `vision_ask` only appears after
+  `/reload`.
+- Invalid values are ignored: `cols`/`maxLines` fall back to their clamps, a
+  `vision` block needs string `provider` and `model`, `prompt` must be a
+  string, and `maxTokens` must be a positive number.
 - `vision`: when present, takes precedence and is used for every image.
   Remove the block to pass images through untouched.
 - `vision.prompt`: replaces the built-in describe prompt entirely. The
@@ -169,10 +179,10 @@ screenshot text, so leave the default in place for sensitive material.
 
 ## Troubleshooting
 
-- **`Ctrl+V` does nothing.** Another program owns the key, or pi's built-in
-  paste is still bound. Check the keybindings step in Install, then `/reload`.
-- **"No image found in clipboard."** The clipboard holds something that is not
-  an image.
+- **`Ctrl+V` does nothing.** Another program owns the key. On Linux, install
+  `wl-clipboard` or `xclip` and make sure an image, text, or file is copied.
+- **"No image or text found in clipboard."** The clipboard is empty or holds a
+  format pi-ansicat cannot read.
 - **"ansicat paste failed: ..."** The clipboard tool is missing, no display
   server is set, or the format is unsupported. Install `wl-clipboard` or
   `xclip` and make sure an image is copied. Clipboard reads are Linux-only.

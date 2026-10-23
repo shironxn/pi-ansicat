@@ -2,8 +2,24 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { deflateSync } from "node:zlib";
 
-import { decodeImage } from "../src/decode.ts";
+import { decodeImage, sniffImageMime } from "../src/decode.ts";
 import { toPngForPreview } from "../src/convert.ts";
+
+test("sniffImageMime recognizes the formats /ansicat can route", () => {
+  const enc = new TextEncoder();
+  assert.equal(sniffImageMime(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), "image/png");
+  assert.equal(sniffImageMime(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])), "image/jpeg");
+  assert.equal(sniffImageMime(new Uint8Array([0x42, 0x4d, 0x00, 0x00])), "image/bmp");
+  assert.equal(sniffImageMime(enc.encode("GIF89a")), "image/gif");
+
+  const webp = new Uint8Array(12);
+  webp.set(enc.encode("RIFF"), 0);
+  webp.set(enc.encode("WEBP"), 8);
+  assert.equal(sniffImageMime(webp), "image/webp");
+
+  assert.equal(sniffImageMime(enc.encode("hello")), undefined);
+  assert.equal(sniffImageMime(new Uint8Array()), undefined);
+});
 
 // Fixtures are embedded as base64 so the suite needs no image tooling and
 // no binary files in the repo. Expected pixel values come from PIL.

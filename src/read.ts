@@ -1,6 +1,8 @@
 // Pure transforms for the read tool's vision fallback; the async describe call
 // stays in ./index.ts so this module is testable without the pi runtime.
 
+import type { ImageMarker } from "./types.js";
+
 export interface TextBlock {
   type: "text";
   text: string;
@@ -44,6 +46,21 @@ export function truncateDescription(description: string): string {
   return description.length > MAX_DESCRIPTION_CHARS
     ? `${description.slice(0, MAX_DESCRIPTION_CHARS)}…[truncated]`
     : description;
+}
+
+export function markerKey(marker: ImageMarker): string {
+  return marker.text.trim();
+}
+
+// Remove ansicat's editor markers before the text reaches the model, either
+// because a description replaces them or because the image was dropped.
+export function stripMarkers(text: string, markers: readonly ImageMarker[]): string {
+  let out = text;
+  for (const marker of markers) {
+    out = out.split(marker.text).join("");
+    out = out.split(markerKey(marker)).join("");
+  }
+  return out;
 }
 
 export function imageBlocks(content: readonly ReadBlock[]): ImageBlock[] {

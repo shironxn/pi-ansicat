@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { basename, dirname, extname, resolve } from "node:path";
+import { basename, extname, resolve } from "node:path";
 
 import { createReadToolDefinition, defineTool, resizeImage, type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
@@ -11,12 +11,12 @@ import { Type } from "typebox";
 import { renderHalfBlocks } from "./art.js";
 import { descriptionCacheKey, descriptionCachePath, readCachedDescription, writeCachedDescription } from "./cache.js";
 import { agentDir, ansicatConfigPaths } from "./config.js";
-import { readClipboardImage } from "./clipboard.js";
+import { readClipboardImage, readClipboardText } from "./clipboard.js";
 import { toPngForPreview } from "./convert.js";
-import { decodeImage } from "./decode.js";
+import { decodeImage, sniffImageMime } from "./decode.js";
 import { ImageStore } from "./images.js";
-import { imageBlocks, substituteReadImages, truncateDescription, visionAnswerLabel, visionEvidenceLabel, type ReadBlock } from "./read.js";
-import type { ImageMarker, PendingImage } from "./types.js";
+import { imageBlocks, markerKey, stripMarkers, substituteReadImages, truncateDescription, visionAnswerLabel, visionEvidenceLabel, type ReadBlock } from "./read.js";
+import type { ClipboardImage, ImageMarker, PendingImage } from "./types.js";
 import { isTruncatedReply } from "./refusal.js";
 import { describeImage, describePrompt, loadVisionConfig, modelSupportsImages, type VisionConfig } from "./vision.js";
 
@@ -36,23 +36,9 @@ const MIME_BY_EXT: Record<string, string> = {
   ".gif": "image/gif",
 };
 
-const PNG_SIG_BYTES = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-
-// Fallback for extensions the map does not know (including none at all).
-function sniffImageMime(bytes: Uint8Array): string | undefined {
-  const sig = (n: number) => String.fromCharCode(...bytes.subarray(0, n));
-  if (bytes.length >= 8 && PNG_SIG_BYTES.every((v, i) => bytes[i] === v)) return "image/png";
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
-  if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) return "image/bmp";
-  if (bytes.length >= 6 && (sig(6) === "GIF87a" || sig(6) === "GIF89a")) return "image/gif";
-  if (bytes.length >= 12 && sig(4) === "RIFF" && sig(12).slice(8, 12) === "WEBP") return "image/webp";
-  return undefined;
-}
-
 interface AnsicatConfig {
   cols: number;
   maxLines: number;
-  keybindingPromptDeclined?: boolean;
 }
 const DEFAULT_CONFIG: AnsicatConfig = { cols: 48, maxLines: 14 };
 let _config: AnsicatConfig = { ...DEFAULT_CONFIG };
@@ -71,79 +57,15 @@ function loadConfig(): AnsicatConfig {
     if (!raw) continue;
     const cols = Math.max(20, Math.min(120, Number(raw.cols) || DEFAULT_CONFIG.cols));
     const maxLines = Math.max(4, Math.min(40, Number(raw.maxLines) || DEFAULT_CONFIG.maxLines));
-    return { cols, maxLines, keybindingPromptDeclined: raw.keybindingPromptDeclined === true };
+    return { cols, maxLines };
   }
   return { ...DEFAULT_CONFIG };
-}
-
-// Read-merge-write keeps unrelated keys and the replace is atomic.
-async function persistDeclined(): Promise<void> {
-  const [p, legacy] = ansicatConfigPaths();
-  let raw: Record<string, unknown> = {};
-  for (const src of [p, legacy]) {
-    const parsed = parseConfigFile(src);
-    if (parsed) { raw = parsed as Record<string, unknown>; break; }
-  }
-  // Only the flag is written; cols/maxLines stay exactly as the user set them.
-  const next = { ...raw, keybindingPromptDeclined: true };
-  mkdirSync(dirname(p), { recursive: true });
-  const tmp = `${p}.tmp.${randomUUID()}`;
-  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`);
-  renameSync(tmp, p);
 }
 
 interface PendingImageEx extends PendingImage {
   art: string[];
   note?: string;
   label: string;
-}
-
-// Missing file means pi's default bindings (alt+v, ctrl+v) are still active.
-type BindingState =
-  | { status: "bound"; cfg: Record<string, unknown> }
-  | { status: "unbound" }
-  | { status: "stringBound" }
-  | { status: "missing" }
-  | { status: "unreadable" };
-
-function readBindings(kbPath: string): BindingState {
-  let text: string;
-  try {
-    text = readFileSync(kbPath, "utf8");
-  } catch {
-    return { status: "missing" };
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return { status: "unreadable" };
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return { status: "unreadable" };
-  }
-  const cfg = parsed as Record<string, unknown>;
-  const bound = cfg["app.clipboard.pasteImage"];
-  if (bound === undefined) return { status: "bound", cfg };
-  if (typeof bound === "string") return { status: "stringBound" };
-  if (Array.isArray(bound)) return bound.length > 0 ? { status: "bound", cfg } : { status: "unbound" };
-  return { status: "unbound" };
-}
-
-// Re-read at write time: the confirm dialog can stay open for minutes and a
-// stale snapshot would clobber edits made in between.
-async function writeBindings(kbPath: string): Promise<{ created: boolean; skipped?: boolean }> {
-  const state = readBindings(kbPath);
-  if (state.status === "unbound") return { created: false };
-  if (state.status !== "bound" && state.status !== "missing") return { created: false, skipped: true };
-  const next = { ...(state.status === "bound" ? state.cfg : {}), ["app.clipboard.pasteImage"]: [] as unknown[] };
-  const body = `${JSON.stringify(next, null, 2)}\n`;
-  mkdirSync(dirname(kbPath), { recursive: true });
-  if (state.status === "bound") copyFileSync(kbPath, `${kbPath}.bak-ansicat-${Date.now()}`);
-  const tmp = `${kbPath}.tmp.${randomUUID()}`;
-  writeFileSync(tmp, body);
-  renameSync(tmp, kbPath);
-  return { created: state.status === "missing" };
 }
 
 interface ImageQueue {
@@ -153,7 +75,6 @@ interface ImageQueue {
 }
 
 function createImageQueue(): ImageQueue { return { images: [], markers: [], nextIndex: 1 }; }
-function markerKey(marker: ImageMarker): string { return marker.text.trim(); }
 
 // Strip ANSI escapes, control codes, and bidi overrides from paths before TUI output.
 const tuiSafe = (s: string): string => s.replace(/[\x00-\x1f\x7f-\x9f\p{Cf}]/gu, "");
@@ -181,16 +102,24 @@ function renderPreviewWidget(ctx: ExtensionContext): void {
   _previewWidgetActive = true;
 }
 
+// Drop previews (and their image data) as soon as their marker leaves the editor.
+function pruneQueue(queue: ImageQueue, editor: string): void {
+  const live = queue.markers.filter((m) => editor.includes(markerKey(m)));
+  if (live.length === queue.markers.length) return;
+  queue.markers = live;
+  const ids = new Set(live.map((m) => m.id));
+  queue.images = queue.images.filter((img) => ids.has(img.id));
+}
+
 // Drop a preview as soon as its marker leaves the editor.
 function syncPreviewWidget(): void {
   if (!_previewWidgetActive || !_ctx || !_queue) return;
   const ctx = _ctx, queue = _queue;
   const editor = ctx.ui.getEditorText();
+  pruneQueue(queue, editor);
   const before = _widgetItems.length;
-  _widgetItems = _widgetItems.filter((it) => {
-    const marker = queue.markers.find((m) => m.id === it.id);
-    return !!marker && editor.includes(marker.text.trim());
-  });
+  const liveIds = new Set(queue.markers.map((m) => m.id));
+  _widgetItems = _widgetItems.filter((it) => liveIds.has(it.id));
   if (_widgetItems.length !== before) renderPreviewWidget(ctx);
 }
 
@@ -218,6 +147,8 @@ async function buildPreview(bytes: Uint8Array, mimeType: string, label: string):
 
 const WIDGET_KEY = "pi-ansicat-preview";
 const MAX_WIDGET_ITEMS = 8;
+// Base64 chars are ASCII, so this is close to the memory held by pending pastes.
+const MAX_PENDING_BASE64_BYTES = 64 * 1024 * 1024;
 interface WidgetItem { id: string; title: string; art: string[]; note?: string; }
 let _widgetItems: WidgetItem[] = [];
 let _previewWidgetActive = false;
@@ -380,13 +311,29 @@ async function doPaste(): Promise<void> {
   const ctx = _ctx, queue = _queue;
   _pasting = true;
   try {
-    const image = await readClipboardImage();
-    if (!image) { ctx.ui.notify("No image found in clipboard.", "warning"); return; }
+    pruneQueue(queue, ctx.ui.getEditorText());
+    let image: ClipboardImage | null = null;
+    let failure: string | undefined;
+    try { image = await readClipboardImage(); }
+    catch (error) { failure = error instanceof Error ? error.message : String(error); }
+    if (!image) {
+      // The key also covers pi's built-in paste, so keep text and copied files working.
+      const text = await readClipboardText().catch(() => null);
+      if (text) { ctx.ui.pasteToEditor(text); return; }
+      ctx.ui.notify(failure ? `ansicat paste failed: ${failure}` : "No image or text found in clipboard.", "warning");
+      return;
+    }
     if (image.bytes.length > MAX_FILE_SIZE_BYTES) { ctx.ui.notify(`Image too large (${(image.bytes.length / 1048576).toFixed(1)}MB > 20MB).`, "warning"); return; }
+    const base64 = Buffer.from(image.bytes).toString("base64");
+    const pendingBytes = queue.images.reduce((sum, img) => sum + img.base64.length, 0);
+    if (pendingBytes + base64.length > MAX_PENDING_BASE64_BYTES) {
+      ctx.ui.notify(`ansicat: pending previews would exceed ${MAX_PENDING_BASE64_BYTES / 1048576} MB; submit them or delete a marker first.`, "warning");
+      return;
+    }
     // Not a filename: models treat path-looking labels as files to read.
     const label = "from clipboard";
     const { art, note } = await buildPreview(image.bytes, image.mimeType, label);
-    const marker = queueImage(queue, { id: "", base64: Buffer.from(image.bytes).toString("base64"), mimeType: image.mimeType, art, note, label }, ctx);
+    const marker = queueImage(queue, { id: "", base64, mimeType: image.mimeType, art, note, label }, ctx);
     _widgetItems.push({ id: marker.id, title: `ansicat: ${marker.text.trim()} (${label})`, art, note });
     renderPreviewWidget(ctx);
     if (note && art.length === 0) ctx.ui.notify(note, "info");
@@ -468,7 +415,10 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
     } catch { return undefined; }
   });
 
-  for (const shortcut of ["ctrl+v", "alt+v", "ctrl+alt+v"] as KeyId[]) { pi.registerShortcut(shortcut, { description: "Attach clipboard image with ANSI preview", handler: doPaste }); }
+  // Clipboard reads are Linux-only; elsewhere the built-in paste keeps these keys.
+  if (process.platform === "linux") {
+    for (const shortcut of ["ctrl+v", "alt+v", "ctrl+alt+v"] as KeyId[]) { pi.registerShortcut(shortcut, { description: "Attach clipboard image with ANSI preview", handler: doPaste }); }
+  }
 
   pi.on("input", async (event) => {
     if (event.source === "extension") return { action: "continue" as const };
@@ -487,9 +437,12 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
     if (_previewWidgetActive || _widgetItems.length) { ctx.ui.setWidget(WIDGET_KEY, undefined); _previewWidgetActive = false; }
     _widgetItems = [];
     if (imagesToAttach.length === 0) return { action: "continue" as const };
-    let text = event.text;
     const cfg = loadVisionConfig();
     if (cfg) {
+      // The marker is editor-only; descriptions carry their own #N label.
+      const base = stripMarkers(event.text, attached).trim();
+      const withBase = (body: string) => (base.length > 0 ? `${base}\n\n${body}` : body);
+      let text = base;
       // An API error must never read like evidence about the image.
       const notes: { id: number; text: string }[] = [];
       const failures: string[] = [];
@@ -510,7 +463,7 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
           failures.push(errorText(err)); failedImages.push(img);
         }
       }
-      if (notes.length > 0) text = `${event.text}\n\n${visionEvidenceLabel("you pasted")}\n${notes.map((n) => `[image #${n.id}] ${truncateDescription(n.text)}`).join("\n")}`;
+      if (notes.length > 0) text = withBase(`${visionEvidenceLabel("you pasted")}\n${notes.map((n) => `[image #${n.id}] ${truncateDescription(n.text)}`).join("\n")}`);
       const supportsImages = modelSupportsImages(ctx);
       const fallbackImages = supportsImages ? failedImages.map((img) => ({ type: "image" as const, data: img.base64, mimeType: img.mimeType })) : [];
       if (failures.length > 0) {
@@ -520,7 +473,7 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
         } else {
           // Say the image is unavailable instead of letting the model guess.
           if (notes.length === 0) {
-            text = `${event.text}\n\n[ansicat: the pasted image could not be described and is NOT available to you. Do not guess its contents. Reason: ${reason}]`;
+            text = withBase(`[ansicat: the pasted image could not be described and is NOT available to you. Do not guess its contents. Reason: ${reason}]`);
           } else {
             text += `\n[ansicat: ${failures.length} further image(s) could not be described and are NOT available to you. Reason: ${reason}]`;
           }
@@ -532,9 +485,12 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
     }
     if (!modelSupportsImages(ctx)) {
       ctx.ui.notify("ansicat: text-only model and no vision config; image dropped (add a vision block to ansicat.json to describe it)", "warning");
-      return { action: "transform" as const, text, images: event.images ?? [] };
+      // Do not leave a marker pointing at an image the model will not receive.
+      const stripped = stripMarkers(event.text, attached).trim();
+      const dropped = "[ansicat: pasted image(s) dropped because the current model does not support images and no vision config is set. Do not guess their contents.]";
+      return { action: "transform" as const, text: stripped.length > 0 ? `${stripped}\n\n${dropped}` : dropped, images: event.images ?? [] };
     }
-    return { action: "transform" as const, text, images: [...(event.images ?? []), ...imagesToAttach.map((img) => ({ type: "image" as const, data: img.base64, mimeType: img.mimeType }))] };
+    return { action: "transform" as const, text: event.text, images: [...(event.images ?? []), ...imagesToAttach.map((img) => ({ type: "image" as const, data: img.base64, mimeType: img.mimeType }))] };
   });
 
   pi.registerCommand("ansicat", {
@@ -566,6 +522,15 @@ export function registerAnsiCat(pi: ExtensionAPI): void {
       try {
         // A leading "@" is pi's file-reference habit; treat it as a plain path.
         const abs = resolve(ctx.cwd, source.replace(/^@/, "").replace(/^~(?=\/|$)/, process.env.HOME ?? "~"));
+        const info = statSync(abs);
+        if (!info.isFile()) {
+          ctx.ui.notify(`ansicat: ${tuiSafe(basename(abs))}: not a regular file`, "error");
+          return;
+        }
+        if (info.size > MAX_FILE_SIZE_BYTES) {
+          ctx.ui.notify(`ansicat: file too large (${(info.size / 1048576).toFixed(1)}MB > 20MB)`, "error");
+          return;
+        }
         const bytes = new Uint8Array(await readFile(abs));
         if (bytes.length > MAX_FILE_SIZE_BYTES) {
           ctx.ui.notify(`ansicat: file too large (${(bytes.length / 1048576).toFixed(1)}MB > 20MB)`, "error");
@@ -604,41 +569,6 @@ export default function (pi: ExtensionAPI): void {
         if (!_previewWidgetActive) return;
         setTimeout(() => syncPreviewWidget(), 0);
       });
-    }
-    if (!ctx.hasUI) return;
-
-    // Ask once to unbind pi's built-in paste, which shares these keys.
-    const kbPath = `${agentDir()}/keybindings.json`;
-    const state = readBindings(kbPath);
-    if (!_config.keybindingPromptDeclined && (state.status === "bound" || state.status === "missing" || state.status === "stringBound")) {
-      const ok = await ctx.ui.confirm(
-        "pi-ansicat",
-        state.status === "stringBound"
-          ? "pi-ansicat: app.clipboard.pasteImage uses a string binding, which cannot be auto-unbound. Edit keybindings.json manually."
-          : "Ctrl+V also triggers pi's built-in image paste (double paste). Unbind the built-in in keybindings.json? (original is backed up)",
-      );
-      if (!ok) {
-        _config.keybindingPromptDeclined = true;
-        try { await persistDeclined(); }
-        catch { /* non-fatal: worst case the prompt shows again next session */ }
-      }
-      if (ok && state.status !== "stringBound") {
-        try {
-          const result = await writeBindings(kbPath);
-          if (result.skipped) {
-            ctx.ui.notify("ansicat: keybindings.json changed while the dialog was open; not writing it", "warning");
-          } else {
-            ctx.ui.notify(
-              result.created
-                ? "ansicat: keybindings.json created with built-in paste unbound, reload to apply"
-                : "ansicat: built-in paste unbound (backup kept), reload to apply",
-              "info",
-            );
-          }
-        } catch (err) {
-          ctx.ui.notify(`ansicat: could not write keybindings.json (${err instanceof Error ? err.message : String(err)})`, "warning");
-        }
-      }
     }
   });
   pi.on("session_shutdown", () => {

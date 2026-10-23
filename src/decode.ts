@@ -16,6 +16,17 @@ function readU32LE(buf: Uint8Array, off: number): number {
 
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
+// Fallback when the file extension is missing or unknown.
+export function sniffImageMime(bytes: Uint8Array): string | undefined {
+  const sig = (n: number) => String.fromCharCode(...bytes.subarray(0, n));
+  if (bytes.length >= 8 && PNG_SIG.every((v, i) => bytes[i] === v)) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) return "image/bmp";
+  if (bytes.length >= 6 && (sig(6) === "GIF87a" || sig(6) === "GIF89a")) return "image/gif";
+  if (bytes.length >= 12 && sig(4) === "RIFF" && sig(12).slice(8, 12) === "WEBP") return "image/webp";
+  return undefined;
+}
+
 // Samples per pixel per PNG color type. Type 3 (palette) carries one index.
 const CHANNELS: Record<number, number> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
 

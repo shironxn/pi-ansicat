@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   imageBlocks,
   MAX_DESCRIPTION_CHARS,
+  markerKey,
+  stripMarkers,
   substituteReadImages,
   truncateDescription,
   visionAnswerLabel,
@@ -15,6 +17,25 @@ import {
 const IMAGE: ImageBlock = { type: "image", data: "AAAA", mimeType: "image/png" };
 const OTHER_IMAGE: ImageBlock = { type: "image", data: "BBBB", mimeType: "image/jpeg" };
 const NON_VISION_NOTE = "[Current model does not support images. The image will be omitted from this request.]";
+
+test("markerKey ignores the trailing space the editor adds", () => {
+  assert.equal(markerKey({ id: "a", text: "[Image #1] " }), "[Image #1]");
+});
+
+test("stripMarkers removes the marker and the trimmed variant", () => {
+  const markers = [{ id: "a", text: "[Image #1] " }];
+  assert.equal(stripMarkers("what is this? [Image #1] ", markers), "what is this? ");
+  assert.equal(stripMarkers("what is this? [Image #1]", markers), "what is this? ");
+});
+
+test("stripMarkers removes every pasted marker but keeps the rest", () => {
+  const markers = [{ id: "a", text: "[Image #1] " }, { id: "b", text: "[Image #2] " }];
+  assert.equal(stripMarkers("[Image #1] compare [Image #2] these", markers), "compare these");
+});
+
+test("stripMarkers leaves unrelated text alone", () => {
+  assert.equal(stripMarkers("[Image #10] and [Image #1]", [{ id: "a", text: "[Image #1] " }]), "[Image #10] and ");
+});
 
 function textOf(block: ReadBlock): string {
   assert.equal(block.type, "text");

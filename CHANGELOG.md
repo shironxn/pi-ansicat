@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- `Ctrl+V` now falls back to clipboard text and copied file paths when the
+  clipboard holds no image, so pi's normal paste keeps working. The paste
+  shortcuts are registered on Linux only; elsewhere the built-in paste keeps
+  the keys.
+- Removed the `keybindings.json` prompt and automatic unbind. pi checks
+  extension shortcuts before built-in keybindings, so the built-in paste never
+  double-fires and did not need to be disabled.
+- `/ansicat <path>` checks the file before reading it. A device file or a file
+  over 20 MB is rejected instead of being loaded into memory.
+- `vision` settings are validated. A non-string `prompt` or a non-numeric
+  `maxTokens` is ignored instead of failing every describe call.
+- With a `vision` block, `[Image #N]` markers are removed from the model-facing
+  prompt, leaving only the description's `#N` label used by `vision_ask`.
+- Added tests for clipboard file URIs and vision config validation.
+- A drop caused by a text-only model without a vision block no longer leaves an
+  `[Image #N]` marker in the prompt; the model gets an explicit notice instead.
+- Image paste falls back to X11 when a Wayland session has no working
+  `wl-paste`, so Xwayland setups with only `xclip` keep working.
+- Marker stripping is now a tested pure helper (`src/read.ts`), and a
+  vision-only paste no longer starts the model prompt with blank lines.
+- `sniffImageMime` moved to `src/decode.ts` with tests, removing the duplicate
+  from `src/index.ts`.
+- Pending pastes are capped at 64 MB of base64 data; deleting a marker frees
+  its image immediately. X11 text reads now request a text target instead of
+  whatever target `xclip` would pick first, and the fallback order is covered
+  by a test.
+
 ## 0.4.1
 
 - Declare `typebox` as a host-provided peer dependency (`*`) instead of a
