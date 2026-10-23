@@ -28,6 +28,9 @@
   its image immediately. X11 text reads now request a text target instead of
   whatever target `xclip` would pick first, and the fallback order is covered
   by a test.
+- CI runs `npm run typecheck` and `npm test` on Node 22.19, 24, and 26. The test
+  script uses an explicit `.test.ts` glob because Node 22 does not discover
+  TypeScript files from a directory argument.
 
 ## 0.4.1
 

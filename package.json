@@ -56,7 +56,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.ts",
     "prepublishOnly": "npm run typecheck && npm test",
     "eval": "bash eval/run.sh"
   },
