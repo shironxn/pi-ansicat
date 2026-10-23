@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - `Ctrl+V` now falls back to clipboard text and copied file paths when the
   clipboard holds no image, so pi's normal paste keeps working. The paste
