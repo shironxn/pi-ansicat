@@ -11,6 +11,8 @@ files opened with the `read` tool.
 [![npm](https://img.shields.io/npm/v/pi-ansicat)](https://www.npmjs.com/package/pi-ansicat)
 [![license](https://img.shields.io/npm/l/pi-ansicat)](https://github.com/shironxn/pi-ansicat/blob/main/LICENSE)
 
+[pi.dev package](https://pi.dev/packages/pi-ansicat)
+
 ## Features
 
 - `Ctrl+V` pastes a clipboard image, inserts an `[Image #N]` marker, and shows
